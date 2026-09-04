@@ -104,7 +104,8 @@ local function GetCleanFolder(name)
     return name:gsub("%s*%([%w%s]+%)", "")
 end
 
-local function GetMobRealName(mobModel)
+local function GetMobAssembly(mobModel)
+    if not mobModel then return nil end
     local head = mobModel:FindFirstChild("Head") or mobModel:FindFirstChild("HumanoidRootPart")
     if head and head:IsA("BasePart") then
         local success, rootPart = pcall(function() return head.AssemblyRootPart end)
@@ -130,33 +131,6 @@ local function IsMobSpawnedAndAlive(mobModel)
     return true
 end
 
-local function GetCurrentIslandName()
-    local character = LocalPlayer.Character
-    local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-    if not rootPart then return State.SelectedWorldMobFolder end
-
-    local closestIsland = State.SelectedWorldMobFolder
-    local shortestDist = math.huge
-
-    for _, rawFolder in ipairs(WorldFoldersList) do
-        local folderName = GetCleanFolder(rawFolder)
-        local folder = WorldEnemies:FindFirstChild(folderName)
-        if folder then
-            for _, mob in ipairs(folder:GetChildren()) do
-                local mobRoot = GetMobRootPart(mob)
-                if mobRoot then
-                    local dist = (mobRoot.Position - rootPart.Position).Magnitude
-                    if dist < shortestDist then
-                        shortestDist = dist
-                        closestIsland = rawFolder
-                    end
-                end
-            end
-        end
-    end
-    return closestIsland
-end
-
 -- ====================================================================
 --                  [ABA 1: AUTO FARM - WORLD MOBS]
 -- ====================================================================
@@ -167,15 +141,15 @@ local EnemyDropdown
 local function RefreshEnemyList()
     local FolderName = GetCleanFolder(State.SelectedWorldMobFolder)
     local CurrentFolder = WorldEnemies:FindFirstChild(FolderName)
-    local UniqueNames = {}
+    local UniqueAssemblies = {}
     local FilteredList = {}
 
     if CurrentFolder then
         for _, mob in ipairs(CurrentFolder:GetChildren()) do
-            local mobRealName = GetMobRealName(mob)
-            if mobRealName and mobRealName ~= "" and not UniqueNames[mobRealName] then
-                UniqueNames[mobRealName] = true
-                table.insert(FilteredList, mobRealName)
+            local assemblyName = GetMobAssembly(mob)
+            if assemblyName and assemblyName ~= "" and not UniqueAssemblies[assemblyName] then
+                UniqueAssemblies[assemblyName] = true
+                table.insert(FilteredList, assemblyName)
             end
         end
     end
@@ -237,7 +211,7 @@ local function GetTargetWorldMob()
     local folderName = GetCleanFolder(State.SelectedWorldMobFolder)
     local targetFolder = WorldEnemies:FindFirstChild(folderName)
     
-    if not targetFolder then return nil end
+    if not targetFolder or not State.SelectedMobName then return nil end
 
     local character = LocalPlayer.Character
     local rootPart = character and character:FindFirstChild("HumanoidRootPart")
@@ -245,23 +219,12 @@ local function GetTargetWorldMob()
 
     local closestMob = nil
     local shortestDistance = math.huge
+    local targetAssemblyLower = State.SelectedMobName:lower()
 
     for _, mob in ipairs(targetFolder:GetChildren()) do
         if IsMobSpawnedAndAlive(mob) then
-            local realName = GetMobRealName(mob):lower()
-            local mobName = mob.Name:lower()
-            
-            local isTarget = false
-            if State.SelectedMobName then
-                local searchName = State.SelectedMobName:lower()
-                if realName:find(searchName, 1, true) or mobName:find(searchName, 1, true) then
-                    isTarget = true
-                end
-            else
-                isTarget = true
-            end
-
-            if isTarget then
+            local mobAssembly = GetMobAssembly(mob)
+            if mobAssembly and mobAssembly:lower() == targetAssemblyLower then
                 local mobRoot = GetMobRootPart(mob)
                 if mobRoot then
                     local dist = (mobRoot.Position - rootPart.Position).Magnitude
@@ -494,6 +457,33 @@ end)
 -- ====================================================================
 --                  [ABA 4: GAMEMODES & SAVE POSITION]
 -- ====================================================================
+local function GetCurrentIslandName()
+    local character = LocalPlayer.Character
+    local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then return State.SelectedWorldMobFolder end
+
+    local closestIsland = State.SelectedWorldMobFolder
+    local shortestDist = math.huge
+
+    for _, rawFolder in ipairs(WorldFoldersList) do
+        local folderName = GetCleanFolder(rawFolder)
+        local folder = WorldEnemies:FindFirstChild(folderName)
+        if folder then
+            for _, mob in ipairs(folder:GetChildren()) do
+                local mobRoot = GetMobRootPart(mob)
+                if mobRoot then
+                    local dist = (mobRoot.Position - rootPart.Position).Magnitude
+                    if dist < shortestDist then
+                        shortestDist = dist
+                        closestIsland = rawFolder
+                    end
+                end
+            end
+        end
+    end
+    return closestIsland
+end
+
 local function IsAnyGamemodeActive()
     for _, folderName in pairs(GamemodeMobFolders) do
         local folder = EnemiesFolder:FindFirstChild(folderName)
@@ -593,7 +583,7 @@ GamemodeConfigSection:AddToggle("AutoLeaveWaveToggle", {
     Callback    = function(Value) State.AutoLeaveWave = Value end
 })
 
--- SECTION SEPARADA APENAS PARA OS INPUTS DAS WAVES
+-- SECTION SEPARADA EXCLUSIVAMENTE PARA INPUTS DAS WAVES
 local WaveInputsSection = Tabs.Gamemodes:AddSection("Configuração de Waves (Limites)")
 
 WaveInputsSection:AddInput("TargetWaveTrialInput", {
