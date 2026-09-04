@@ -55,7 +55,6 @@ local State = {
     SavedCFrame            = nil,
     SavedIslandName        = "Nenhuma",
     
-    -- Inputs de Wave para cada Gamemode separadamente
     TargetWaveTrialEasy     = 10,
     TargetWaveInfiniteCastle= 50,
     TargetWaveNamekInvasion = 15
@@ -84,7 +83,7 @@ local Window = Fluent:CreateWindow({
     Title       = "The Crown Inc",
     SubTitle    = gameName,
     TabWidth    = 140,
-    Size        = UDim2.fromOffset(500, 380), -- Tamanho reduzido
+    Size        = UDim2.fromOffset(500, 380),
     Acrylic     = true,
     Theme       = "Dark",
     MinimizeKey = Enum.KeyCode.RightControl
@@ -173,7 +172,7 @@ local EnemyDropdown = WorldFarmSection:AddDropdown("EnemySelector", {
     Multi       = false,
     Default     = nil,
     Callback    = function(Value)
-        if Value then
+        if Value and Value ~= "Nenhum Mob Encontrado" then
             local CleanName = Value:gsub("%s*%([%w%s]+%)", "")
             State.SelectedMobName = CleanName
         end
@@ -196,9 +195,16 @@ local function RefreshEnemyList()
         end
     end
 
-    if #FilteredList == 0 then table.insert(FilteredList, "Nenhum Mob Encontrado") end
+    if #FilteredList == 0 then 
+        table.insert(FilteredList, "Nenhum Mob Encontrado")
+    end
+
     EnemyDropdown:SetValues(FilteredList)
     EnemyDropdown:SetValue(FilteredList[1])
+
+    if FilteredList[1] and FilteredList[1] ~= "Nenhum Mob Encontrado" then
+        State.SelectedMobName = FilteredList[1]:gsub("%s*%([%w%s]+%)", "")
+    end
 end
 
 WorldFarmSection:AddButton({
@@ -538,7 +544,6 @@ GamemodeConfigSection:AddDropdown("GamemodeSelector", {
     end
 })
 
--- 3 Inputs de Wave Separados para cada Gamemode
 GamemodeConfigSection:AddInput("TargetWaveTrialInput", {
     Title       = "Wave Limite - Trial Easy",
     Default     = "10",
