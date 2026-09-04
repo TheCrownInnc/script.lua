@@ -1,7 +1,9 @@
 -- ====================================================================
---                      1. IMPORTAÇÃO DE MÓDULOS (WindUI)
+--                      1. IMPORTAÇÃO DE MÓDULOS (Fluent)
 -- ====================================================================
-local WindUI = loadstring(game:HttpGet("https://tree-hub.vercel.app/api/UI/WindUI"))()
+local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
+local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
 
 -- ====================================================================
 --                      2. SERVIÇOS, PLAYERS & REMOTES
@@ -76,29 +78,28 @@ local GachaList = {
 local GamemodeList = { "Trial Easy (Lobby)", "Infinite Castle (W3)", "Namek Invasion (W4)" }
 
 -- ====================================================================
---                      4. CRIAÇÃO DA JANELA (WindUI)
+--                      4. INTERFACE GRÁFICA (Fluent UI)
 -- ====================================================================
-local Window = WindUI:CreateWindow({
-    Title = "The Crown Inc",
-    Icon = "crown",
-    Author = gameName,
-    Folder = "TheCrownIncConfig",
-    Size = UDim2.fromOffset(580, 460),
-    Transparent = true,
-    Theme = "Dark",
-    SideBarWidth = 200,
-    HasOutline = true
+local Window = Fluent:CreateWindow({
+    Title       = "The Crown Inc",
+    SubTitle    = gameName,
+    TabWidth    = 140,
+    Size        = UDim2.fromOffset(500, 380), -- Tamanho reduzido
+    Acrylic     = true,
+    Theme       = "Dark",
+    MinimizeKey = Enum.KeyCode.RightControl
 })
 
 local Tabs = {
-    AutoFarm  = Window:Tab({ Title = "Auto Farm",   Icon = "sword" }),
-    Player    = Window:Tab({ Title = "Player Farm", Icon = "user" }),
-    Gachas    = Window:Tab({ Title = "Gachas & Systems", Icon = "star" }),
-    Gamemodes = Window:Tab({ Title = "Gamemodes",        Icon = "gamepad" })
+    AutoFarm  = Window:AddTab({ Title = "Auto Farm",   Icon = "sword" }),
+    Player    = Window:AddTab({ Title = "Player Farm", Icon = "user" }),
+    Gachas    = Window:AddTab({ Title = "Gachas & Systems", Icon = "star" }),
+    Gamemodes = Window:AddTab({ Title = "Gamemodes",        Icon = "gamepad" }),
+    Settings  = Window:AddTab({ Title = "Settings",         Icon = "settings" })
 }
 
 -- ====================================================================
---                  [FUNÇÕES AUXILIARES]
+--                  [FUNÇÕES AUXILIARES DE LEITURA]
 -- ====================================================================
 local function GetCleanFolder(name)
     return name:gsub("%s*%([%w%s]+%)", "")
@@ -152,23 +153,25 @@ end
 -- ====================================================================
 --                  [ABA 1: AUTO FARM - WORLD MOBS]
 -- ====================================================================
-Tabs.AutoFarm:Section({ Title = "World Enemies Auto Farm" })
+local WorldFarmSection = Tabs.AutoFarm:AddSection("World Enemies Auto Farm")
 
-Tabs.AutoFarm:Dropdown({
+WorldFarmSection:AddDropdown("WorldFolderSelector", {
     Title       = "Selecione a Pasta do World",
-    Desc        = "Escolha de qual ilha deseja buscar os mobs",
+    Description = "Escolha de qual ilha deseja buscar os mobs",
     Values      = WorldFoldersList,
-    Value       = "Pirate Island (W2)",
+    Multi       = false,
+    Default     = "Pirate Island (W2)",
     Callback    = function(Value)
         State.SelectedWorldMobFolder = Value
     end
 })
 
-local EnemyDropdown = Tabs.AutoFarm:Dropdown({
+local EnemyDropdown = WorldFarmSection:AddDropdown("EnemySelector", {
     Title       = "Selecione o Inimigo",
-    Desc        = "Mob alvo para auto farm",
+    Description = "Mob alvo para auto farm",
     Values      = {"Nenhum Mapped"},
-    Value       = nil,
+    Multi       = false,
+    Default     = nil,
     Callback    = function(Value)
         if Value then
             local CleanName = Value:gsub("%s*%([%w%s]+%)", "")
@@ -194,20 +197,20 @@ local function RefreshEnemyList()
     end
 
     if #FilteredList == 0 then table.insert(FilteredList, "Nenhum Mob Encontrado") end
-    EnemyDropdown:Refresh(FilteredList)
-    EnemyDropdown:Set(FilteredList[1])
+    EnemyDropdown:SetValues(FilteredList)
+    EnemyDropdown:SetValue(FilteredList[1])
 end
 
-Tabs.AutoFarm:Button({
+WorldFarmSection:AddButton({
     Title       = "Refresh Mobs",
-    Desc        = "Atualiza a lista de inimigos da ilha selecionada",
+    Description = "Atualiza a lista de inimigos da ilha selecionada",
     Callback    = function() RefreshEnemyList() end
 })
 
-Tabs.AutoFarm:Toggle({
+WorldFarmSection:AddToggle("AutoWorldFarmToggle", {
     Title       = "Ativar Auto Farm World",
-    Desc        = "Teleporta instantaneamente para o mob vivo mais próximo",
-    Value       = false,
+    Description = "Teleporta instantaneamente para o mob vivo mais próximo",
+    Default     = false,
     Callback    = function(Value) State.AutoFarmWorldMobs = Value end
 })
 
@@ -265,36 +268,37 @@ end)
 -- ====================================================================
 --                  [ABA 2: PLAYER FARM & STATS]
 -- ====================================================================
-Tabs.Player:Section({ Title = "Player Functions" })
+local PlayerSection = Tabs.Player:AddSection("Player Functions")
 
-Tabs.Player:Toggle({
+PlayerSection:AddToggle("AutoAttackTurboToggle", {
     Title       = "Auto Attack Turbo",
-    Desc        = "Dispara o remote de ataque continuamente",
-    Value       = false,
+    Description = "Dispara o remote de ataque continuamente",
+    Default     = false,
     Callback    = function(Value) State.AutoAttackTurbo = Value end
 })
 
-Tabs.Player:Toggle({
+PlayerSection:AddToggle("AutoRankUpToggle", {
     Title       = "Auto Rank Up",
-    Desc        = "Realiza o upgrade de Rank automaticamente",
-    Value       = false,
+    Description = "Realiza o upgrade de Rank automaticamente",
+    Default     = false,
     Callback    = function(Value) State.AutoRankUp = Value end
 })
 
-Tabs.Player:Section({ Title = "Stats Upgrades" })
+local StatsSection = Tabs.Player:AddSection("Stats Upgrades")
 
-Tabs.Player:Dropdown({
+StatsSection:AddDropdown("StatSelector", {
     Title       = "Selecione o Atributo",
-    Desc        = "Escolha qual stat deseja evoluir",
+    Description = "Escolha qual stat deseja evoluir",
     Values      = StatsList,
-    Value       = "Energy",
+    Multi       = false,
+    Default     = "Energy",
     Callback    = function(Value) State.SelectedStat = Value end
 })
 
-Tabs.Player:Toggle({
+StatsSection:AddToggle("AutoUpgradeStatToggle", {
     Title       = "Ativar Auto Upgrade Stat",
-    Desc        = "Evolui o atributo selecionado automaticamente",
-    Value       = false,
+    Description = "Evolui o atributo selecionado automaticamente",
+    Default     = false,
     Callback    = function(Value) State.AutoUpgradeStat = Value end
 })
 
@@ -327,41 +331,43 @@ task.spawn(function()
     end
 end)
 
-Tabs.Player:Section({ Title = "Extra Functions" })
+local ExtraSection = Tabs.Player:AddSection("Extra Functions")
 
-Tabs.Player:Toggle({
+ExtraSection:AddToggle("AutoClaimTimeRewardsToggle", {
     Title       = "Auto Claim Time Rewards",
-    Desc        = "Coleta automaticamente todas as recompensas por tempo",
-    Value       = false,
+    Description = "Coleta automaticamente todas as recompensas por tempo",
+    Default     = false,
     Callback    = function(Value) State.AutoClaimTimeRewards = Value end
 })
 
-Tabs.Player:Dropdown({
+ExtraSection:AddDropdown("CraftIslandSelector", {
     Title       = "Selecione a Ilha do Craft",
-    Desc        = "Escolha para qual ilha deseja fabricar",
+    Description = "Escolha para qual ilha deseja fabricar",
     Values      = CraftIslandList,
-    Value       = "Ninja Island (W1)",
+    Multi       = false,
+    Default     = "Ninja Island (W1)",
     Callback    = function(Value) State.SelectedCraftIsland = Value end
 })
 
-Tabs.Player:Dropdown({
+ExtraSection:AddDropdown("CraftTypeSelector", {
     Title       = "Tipo de Personagem",
-    Desc        = "Escolha entre Normal (False) ou Shiny (True)",
+    Description = "Escolha entre Normal (False) ou Shiny (True)",
     Values      = {"Normal (False)", "Shiny (True)"},
-    Value       = "Normal (False)",
+    Multi       = false,
+    Default     = "Normal (False)",
     Callback    = function(Value) State.CraftShinyVersion = (Value == "Shiny (True)") end
 })
 
-Tabs.Player:Toggle({
+ExtraSection:AddToggle("AutoCraftToggle", {
     Title       = "Auto Craft",
-    Desc        = "Executa o craft repetidamente",
-    Value       = false,
+    Description = "Executa o craft repetidamente",
+    Default     = false,
     Callback    = function(Value) State.AutoCraft = Value end
 })
 
-Tabs.Player:Button({
+ExtraSection:AddButton({
     Title       = "Redeem All Codes",
-    Desc        = "Resgata o código 'Release'",
+    Description = "Resgata o código 'Release'",
     Callback    = function()
         pcall(function() SignalRemote:FireServer("General", "Codes", "Claim", "Release") end)
     end
@@ -393,18 +399,19 @@ end)
 -- ====================================================================
 --                  [ABA 3: GACHAS & SYSTEMS]
 -- ====================================================================
-Tabs.Gachas:Section({ Title = "Auto Open Stars" })
+local StarSection = Tabs.Gachas:AddSection("Auto Open Stars")
 
-Tabs.Gachas:Dropdown({
+StarSection:AddDropdown("StarSelector", {
     Title       = "Selecione a Star",
     Values      = StarList,
-    Value       = "Ninja Island (W1)",
+    Multi       = false,
+    Default     = "Ninja Island (W1)",
     Callback    = function(Value) State.SelectedStar = Value end
 })
 
-Tabs.Gachas:Toggle({
+StarSection:AddToggle("AutoStarToggle", {
     Title       = "Ativar Auto Open Star",
-    Value       = false,
+    Default     = false,
     Callback    = function(Value) State.AutoOpenStar = Value end
 })
 
@@ -419,18 +426,19 @@ task.spawn(function()
     end
 end)
 
-Tabs.Gachas:Section({ Title = "Gachas Open" })
+local GachaSection = Tabs.Gachas:AddSection("Gachas Open")
 
-Tabs.Gachas:Dropdown({
+GachaSection:AddDropdown("GachaSelector", {
     Title       = "Selecione o Gacha",
     Values      = GachaList,
-    Value       = "Clans Gacha (W1)",
+    Multi       = false,
+    Default     = "Clans Gacha (W1)",
     Callback    = function(Value) State.SelectedGacha = Value end
 })
 
-Tabs.Gachas:Toggle({
+GachaSection:AddToggle("AutoGachaToggle", {
     Title       = "Ativar Auto Roll Gacha",
-    Value       = false,
+    Default     = false,
     Callback    = function(Value) State.AutoOpenGacha = Value end
 })
 
@@ -462,11 +470,11 @@ local function IsAnyGamemodeActive()
     return false
 end
 
-Tabs.Gamemodes:Section({ Title = "Gamemode & Status Information" })
+local SavePosSection = Tabs.Gamemodes:AddSection("Gamemode & Status Information")
 
-local StatusParagraph = Tabs.Gamemodes:Paragraph({
+local StatusParagraph = SavePosSection:AddParagraph({
     Title   = "Status Geral dos Gamemodes",
-    Desc    = "Carregando informações..."
+    Content = "Carregando informações..."
 })
 
 task.spawn(function()
@@ -494,16 +502,16 @@ task.spawn(function()
     end
 end)
 
-Tabs.Gamemodes:Button({
+SavePosSection:AddButton({
     Title       = "Salvar Posição Atual",
-    Desc        = "Salva a localização atual para retorno automático",
+    Description = "Salva a localização atual para retorno automático",
     Callback    = function()
         local char = LocalPlayer.Character
         local rootPart = char and char:FindFirstChild("HumanoidRootPart")
         if rootPart then
             State.SavedCFrame = rootPart.CFrame
             State.SavedIslandName = GetCurrentIslandName()
-            WindUI:Notify({
+            Fluent:Notify({
                 Title   = "Posição Salva",
                 Content = "Localização gravada na ilha: " .. State.SavedIslandName,
                 Duration = 3
@@ -512,68 +520,76 @@ Tabs.Gamemodes:Button({
     end
 })
 
-Tabs.Gamemodes:Toggle({
+SavePosSection:AddToggle("UseSavedPosToggle", {
     Title       = "Retornar Para Posição Salva",
-    Value       = false,
+    Default     = false,
     Callback    = function(Value) State.UseSavedPosition = Value end
 })
 
-Tabs.Gamemodes:Section({ Title = "Configurações do Gamemode" })
+local GamemodeConfigSection = Tabs.Gamemodes:AddSection("Configurações do Gamemode")
 
-Tabs.Gamemodes:Dropdown({
+GamemodeConfigSection:AddDropdown("GamemodeSelector", {
     Title       = "Selecione o Modo de Jogo",
     Values      = GamemodeList,
-    Value       = "Trial Easy (Lobby)",
+    Multi       = false,
+    Default     = "Trial Easy (Lobby)",
     Callback    = function(Value)
         State.SelectedGamemode = GetCleanFolder(Value)
     end
 })
 
-Tabs.Gamemodes:Input({
+-- 3 Inputs de Wave Separados para cada Gamemode
+GamemodeConfigSection:AddInput("TargetWaveTrialInput", {
     Title       = "Wave Limite - Trial Easy",
-    Value       = "10",
+    Default     = "10",
     Placeholder = "Digite a wave limite...",
+    Numeric     = true,
+    Finished    = true,
     Callback    = function(Value)
         local num = tonumber(Value)
         if num then State.TargetWaveTrialEasy = num end
     end
 })
 
-Tabs.Gamemodes:Input({
+GamemodeConfigSection:AddInput("TargetWaveCastleInput", {
     Title       = "Wave Limite - Infinite Castle",
-    Value       = "50",
+    Default     = "50",
     Placeholder = "Digite a wave limite...",
+    Numeric     = true,
+    Finished    = true,
     Callback    = function(Value)
         local num = tonumber(Value)
         if num then State.TargetWaveInfiniteCastle = num end
     end
 })
 
-Tabs.Gamemodes:Input({
+GamemodeConfigSection:AddInput("TargetWaveNamekInput", {
     Title       = "Wave Limite - Namek Invasion",
-    Value       = "15",
+    Default     = "15",
     Placeholder = "Digite a wave limite...",
+    Numeric     = true,
+    Finished    = true,
     Callback    = function(Value)
         local num = tonumber(Value)
         if num then State.TargetWaveNamekInvasion = num end
     end
 })
 
-Tabs.Gamemodes:Toggle({
+GamemodeConfigSection:AddToggle("AutoJoinGamemodeToggle", {
     Title       = "Auto Join Gamemode",
-    Value       = false,
+    Default     = false,
     Callback    = function(Value) State.AutoJoinGamemode = Value end
 })
 
-Tabs.Gamemodes:Toggle({
+GamemodeConfigSection:AddToggle("AutoFarmGamemodeToggle", {
     Title       = "Auto Farm Gamemode",
-    Value       = false,
+    Default     = false,
     Callback    = function(Value) State.AutoFarmGamemode = Value end
 })
 
-Tabs.Gamemodes:Toggle({
+GamemodeConfigSection:AddToggle("AutoLeaveWaveToggle", {
     Title       = "Auto Leave no Limite de Wave",
-    Value       = false,
+    Default     = false,
     Callback    = function(Value) State.AutoLeaveWave = Value end
 })
 
@@ -671,8 +687,27 @@ task.spawn(function()
     end
 end)
 
-WindUI:Notify({
+-- ====================================================================
+--                  [ABA 5: CONFIGURAÇÕES & ADICIONAIS]
+-- ====================================================================
+SaveManager:SetLibrary(Fluent)
+InterfaceManager:SetLibrary(Fluent)
+
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({})
+
+InterfaceManager:SetFolder("TheCrownIncScript")
+SaveManager:SetFolder("TheCrownIncScript/configs")
+
+InterfaceManager:BuildInterfaceSection(Tabs.Settings)
+SaveManager:BuildConfigSection(Tabs.Settings)
+
+Window:SelectTab(1)
+
+Fluent:Notify({
     Title    = "The Crown Inc",
     Content  = "Script carregado com sucesso!",
     Duration = 5
 })
+
+SaveManager:LoadAutoloadConfig()
