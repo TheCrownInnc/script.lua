@@ -113,11 +113,19 @@ local function GetMobRealName(mobModel)
     return mobModel.Name
 end
 
+local function GetMobRootPart(mobModel)
+    if not mobModel then return nil end
+    return mobModel:FindFirstChild("HumanoidRootPart") 
+        or mobModel:FindFirstChild("Head") 
+        or mobModel.PrimaryPart 
+        or mobModel:FindFirstChildWhichIsA("BasePart")
+end
+
 local function IsMobSpawnedAndAlive(mobModel)
     if not mobModel or not mobModel.Parent then return false end
     local humanoid = mobModel:FindFirstChildOfClass("Humanoid")
-    local rootPart = mobModel:FindFirstChild("HumanoidRootPart") or mobModel:FindFirstChild("Head") or mobModel.PrimaryPart
-    if not humanoid or humanoid.Health <= 0 then return false end
+    local rootPart = GetMobRootPart(mobModel)
+    if humanoid and humanoid.Health <= 0 then return false end
     if not rootPart or not rootPart:IsA("BasePart") then return false end
     return true
 end
@@ -135,7 +143,7 @@ local function GetCurrentIslandName()
         local folder = WorldEnemies:FindFirstChild(folderName)
         if folder then
             for _, mob in ipairs(folder:GetChildren()) do
-                local mobRoot = mob:FindFirstChild("HumanoidRootPart") or mob:FindFirstChild("Head")
+                local mobRoot = GetMobRootPart(mob)
                 if mobRoot then
                     local dist = (mobRoot.Position - rootPart.Position).Magnitude
                     if dist < shortestDist then
@@ -154,30 +162,7 @@ end
 -- ====================================================================
 local WorldFarmSection = Tabs.AutoFarm:AddSection("World Enemies Auto Farm")
 
-WorldFarmSection:AddDropdown("WorldFolderSelector", {
-    Title       = "Selecione a Pasta do World",
-    Description = "Escolha de qual ilha deseja buscar os mobs",
-    Values      = WorldFoldersList,
-    Multi       = false,
-    Default     = "Pirate Island (W2)",
-    Callback    = function(Value)
-        State.SelectedWorldMobFolder = Value
-    end
-})
-
-local EnemyDropdown = WorldFarmSection:AddDropdown("EnemySelector", {
-    Title       = "Selecione o Inimigo",
-    Description = "Mob alvo para auto farm",
-    Values      = {"Nenhum Mapped"},
-    Multi       = false,
-    Default     = nil,
-    Callback    = function(Value)
-        if Value and Value ~= "Nenhum Mob Encontrado" then
-            local CleanName = Value:gsub("%s*%([%w%s]+%)", "")
-            State.SelectedMobName = CleanName
-        end
-    end
-})
+local EnemyDropdown
 
 local function RefreshEnemyList()
     local FolderName = GetCleanFolder(State.SelectedWorldMobFolder)
@@ -190,22 +175,50 @@ local function RefreshEnemyList()
             local mobRealName = GetMobRealName(mob)
             if mobRealName and mobRealName ~= "" and not UniqueNames[mobRealName] then
                 UniqueNames[mobRealName] = true
-                table.insert(FilteredList, mobRealName .. " (" .. State.SelectedWorldMobFolder .. ")")
+                table.insert(FilteredList, mobRealName)
             end
         end
     end
 
     if #FilteredList == 0 then 
         table.insert(FilteredList, "Nenhum Mob Encontrado")
+        State.SelectedMobName = nil
+    else
+        State.SelectedMobName = FilteredList[1]
     end
 
-    EnemyDropdown:SetValues(FilteredList)
-    EnemyDropdown:SetValue(FilteredList[1])
-
-    if FilteredList[1] and FilteredList[1] ~= "Nenhum Mob Encontrado" then
-        State.SelectedMobName = FilteredList[1]:gsub("%s*%([%w%s]+%)", "")
+    if EnemyDropdown then
+        EnemyDropdown:SetValues(FilteredList)
+        if FilteredList[1] then
+            EnemyDropdown:SetValue(FilteredList[1])
+        end
     end
 end
+
+WorldFarmSection:AddDropdown("WorldFolderSelector", {
+    Title       = "Selecione a Pasta do World",
+    Description = "Escolha de qual ilha deseja buscar os mobs",
+    Values      = WorldFoldersList,
+    Multi       = false,
+    Default     = "Pirate Island (W2)",
+    Callback    = function(Value)
+        State.SelectedWorldMobFolder = Value
+        RefreshEnemyList()
+    end
+})
+
+EnemyDropdown = WorldFarmSection:AddDropdown("EnemySelector", {
+    Title       = "Selecione o Inimigo",
+    Description = "Mob alvo para auto farm",
+    Values      = {"Nenhum Mob Encontrado"},
+    Multi       = false,
+    Default     = nil,
+    Callback    = function(Value)
+        if Value and Value ~= "Nenhum Mob Encontrado" then
+            State.SelectedMobName = Value
+        end
+    end
+})
 
 WorldFarmSection:AddButton({
     Title       = "Refresh Mobs",
@@ -223,7 +236,8 @@ WorldFarmSection:AddToggle("AutoWorldFarmToggle", {
 local function GetTargetWorldMob()
     local folderName = GetCleanFolder(State.SelectedWorldMobFolder)
     local targetFolder = WorldEnemies:FindFirstChild(folderName)
-    if not targetFolder or not State.SelectedMobName then return nil end
+    
+    if not targetFolder then return nil end
 
     local character = LocalPlayer.Character
     local rootPart = character and character:FindFirstChild("HumanoidRootPart")
@@ -234,9 +248,21 @@ local function GetTargetWorldMob()
 
     for _, mob in ipairs(targetFolder:GetChildren()) do
         if IsMobSpawnedAndAlive(mob) then
-            local realName = GetMobRealName(mob)
-            if realName:lower() == State.SelectedMobName:lower() then
-                local mobRoot = mob:FindFirstChild("HumanoidRootPart") or mob:FindFirstChild("Head") or mob.PrimaryPart
+            local realName = GetMobRealName(mob):lower()
+            local mobName = mob.Name:lower()
+            
+            local isTarget = false
+            if State.SelectedMobName then
+                local searchName = State.SelectedMobName:lower()
+                if realName:find(searchName, 1, true) or mobName:find(searchName, 1, true) then
+                    isTarget = true
+                end
+            else
+                isTarget = true
+            end
+
+            if isTarget then
+                local mobRoot = GetMobRootPart(mob)
                 if mobRoot then
                     local dist = (mobRoot.Position - rootPart.Position).Magnitude
                     if dist < shortestDistance then
@@ -252,24 +278,29 @@ end
 
 task.spawn(function()
     while true do
-        task.wait(0.2)
+        task.wait(0.05)
         if State.AutoFarmWorldMobs then
             pcall(function()
                 local targetMob = GetTargetWorldMob()
                 if targetMob and IsMobSpawnedAndAlive(targetMob) then
                     local character = LocalPlayer.Character
                     local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-                    local mobRoot = targetMob:FindFirstChild("HumanoidRootPart") or targetMob:FindFirstChild("Head") or targetMob.PrimaryPart
+                    local mobRoot = GetMobRootPart(targetMob)
 
                     if rootPart and mobRoot then
                         rootPart.AssemblyLinearVelocity = Vector3.zero
                         rootPart.AssemblyAngularVelocity = Vector3.zero
-                        rootPart.CFrame = mobRoot.CFrame * CFrame.new(0, 1.5, 1.8)
+                        rootPart.CFrame = CFrame.new(mobRoot.Position + Vector3.new(0, 1.5, 2))
                     end
                 end
             end)
         end
     end
+end)
+
+task.defer(function()
+    task.wait(1)
+    RefreshEnemyList()
 end)
 -- ====================================================================
 --                  [ABA 2: PLAYER FARM & STATS]
@@ -544,42 +575,6 @@ GamemodeConfigSection:AddDropdown("GamemodeSelector", {
     end
 })
 
-GamemodeConfigSection:AddInput("TargetWaveTrialInput", {
-    Title       = "Wave Limite - Trial Easy",
-    Default     = "10",
-    Placeholder = "Digite a wave limite...",
-    Numeric     = true,
-    Finished    = true,
-    Callback    = function(Value)
-        local num = tonumber(Value)
-        if num then State.TargetWaveTrialEasy = num end
-    end
-})
-
-GamemodeConfigSection:AddInput("TargetWaveCastleInput", {
-    Title       = "Wave Limite - Infinite Castle",
-    Default     = "50",
-    Placeholder = "Digite a wave limite...",
-    Numeric     = true,
-    Finished    = true,
-    Callback    = function(Value)
-        local num = tonumber(Value)
-        if num then State.TargetWaveInfiniteCastle = num end
-    end
-})
-
-GamemodeConfigSection:AddInput("TargetWaveNamekInput", {
-    Title       = "Wave Limite - Namek Invasion",
-    Default     = "15",
-    Placeholder = "Digite a wave limite...",
-    Numeric     = true,
-    Finished    = true,
-    Callback    = function(Value)
-        local num = tonumber(Value)
-        if num then State.TargetWaveNamekInvasion = num end
-    end
-})
-
 GamemodeConfigSection:AddToggle("AutoJoinGamemodeToggle", {
     Title       = "Auto Join Gamemode",
     Default     = false,
@@ -598,6 +593,45 @@ GamemodeConfigSection:AddToggle("AutoLeaveWaveToggle", {
     Callback    = function(Value) State.AutoLeaveWave = Value end
 })
 
+-- SECTION SEPARADA APENAS PARA OS INPUTS DAS WAVES
+local WaveInputsSection = Tabs.Gamemodes:AddSection("Configuração de Waves (Limites)")
+
+WaveInputsSection:AddInput("TargetWaveTrialInput", {
+    Title       = "Wave Limite - Trial Easy",
+    Default     = "10",
+    Placeholder = "Digite a wave limite...",
+    Numeric     = true,
+    Finished    = true,
+    Callback    = function(Value)
+        local num = tonumber(Value)
+        if num then State.TargetWaveTrialEasy = num end
+    end
+})
+
+WaveInputsSection:AddInput("TargetWaveCastleInput", {
+    Title       = "Wave Limite - Infinite Castle",
+    Default     = "50",
+    Placeholder = "Digite a wave limite...",
+    Numeric     = true,
+    Finished    = true,
+    Callback    = function(Value)
+        local num = tonumber(Value)
+        if num then State.TargetWaveInfiniteCastle = num end
+    end
+})
+
+WaveInputsSection:AddInput("TargetWaveNamekInput", {
+    Title       = "Wave Limite - Namek Invasion",
+    Default     = "15",
+    Placeholder = "Digite a wave limite...",
+    Numeric     = true,
+    Finished    = true,
+    Callback    = function(Value)
+        local num = tonumber(Value)
+        if num then State.TargetWaveNamekInvasion = num end
+    end
+})
+
 local function GetTargetGamemodeMob()
     local folderName = GamemodeMobFolders[State.SelectedGamemode]
     if not folderName then return nil end
@@ -614,7 +648,7 @@ local function GetTargetGamemodeMob()
 
     for _, mob in ipairs(targetFolder:GetChildren()) do
         if IsMobSpawnedAndAlive(mob) then
-            local mobRoot = mob:FindFirstChild("HumanoidRootPart") or mob:FindFirstChild("Head") or mob.PrimaryPart
+            local mobRoot = GetMobRootPart(mob)
             if mobRoot then
                 local dist = (mobRoot.Position - rootPart.Position).Magnitude
                 if dist < shortestDist then
@@ -629,19 +663,19 @@ end
 
 task.spawn(function()
     while true do
-        task.wait(0.1)
+        task.wait(0.05)
         if State.AutoFarmGamemode then
             pcall(function()
                 local targetMob = GetTargetGamemodeMob()
                 if targetMob and IsMobSpawnedAndAlive(targetMob) then
                     local character = LocalPlayer.Character
                     local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-                    local mobRoot = targetMob:FindFirstChild("HumanoidRootPart") or targetMob:FindFirstChild("Head") or targetMob.PrimaryPart
+                    local mobRoot = GetMobRootPart(targetMob)
 
                     if rootPart and mobRoot then
                         rootPart.AssemblyLinearVelocity = Vector3.zero
                         rootPart.AssemblyAngularVelocity = Vector3.zero
-                        rootPart.CFrame = mobRoot.CFrame * CFrame.new(0, 1.5, 1.8)
+                        rootPart.CFrame = CFrame.new(mobRoot.Position + Vector3.new(0, 1.5, 2))
                     end
                 end
             end)
