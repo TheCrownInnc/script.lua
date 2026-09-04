@@ -202,41 +202,37 @@ WorldFarmSection:AddButton({
 
 WorldFarmSection:AddToggle("AutoWorldFarmToggle", {
     Title       = "Ativar Auto Farm World",
-    Description = "Teleporta instantaneamente para o mob vivo mais próximo",
+    Description = "Teleporta por todos os mobs do assembly selecionado",
     Default     = false,
     Callback    = function(Value) State.AutoFarmWorldMobs = Value end
 })
 
-local function GetTargetWorldMob()
+-- ====================================================================
+--        [VARREDURA TOTAL DE MOBS DO ASSEMBLY (FILA DE PRIORIDADE)]
+-- ====================================================================
+local CurrentTargetIndex = 1
+local TargetStuckTimer = 0
+local LastTargetMob = nil
+
+local function GetAllMobsWithAssembly()
     local folderName = GetCleanFolder(State.SelectedWorldMobFolder)
     local targetFolder = WorldEnemies:FindFirstChild(folderName)
-    
-    if not targetFolder or not State.SelectedMobName then return nil end
+    local matchedMobs = {}
 
-    local character = LocalPlayer.Character
-    local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-    if not rootPart then return nil end
+    if not targetFolder or not State.SelectedMobName then return matchedMobs end
 
-    local closestMob = nil
-    local shortestDistance = math.huge
     local targetAssemblyLower = State.SelectedMobName:lower()
 
     for _, mob in ipairs(targetFolder:GetChildren()) do
         if IsMobSpawnedAndAlive(mob) then
             local mobAssembly = GetMobAssembly(mob)
             if mobAssembly and mobAssembly:lower() == targetAssemblyLower then
-                local mobRoot = GetMobRootPart(mob)
-                if mobRoot then
-                    local dist = (mobRoot.Position - rootPart.Position).Magnitude
-                    if dist < shortestDistance then
-                        shortestDistance = dist
-                        closestMob = mob
-                    end
-                end
+                table.insert(matchedMobs, mob)
             end
         end
     end
-    return closestMob
+
+    return matchedMobs
 end
 
 task.spawn(function()
@@ -244,19 +240,54 @@ task.spawn(function()
         task.wait(0.05)
         if State.AutoFarmWorldMobs then
             pcall(function()
-                local targetMob = GetTargetWorldMob()
-                if targetMob and IsMobSpawnedAndAlive(targetMob) then
-                    local character = LocalPlayer.Character
-                    local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-                    local mobRoot = GetMobRootPart(targetMob)
+                local matchedMobs = GetAllMobsWithAssembly()
 
-                    if rootPart and mobRoot then
-                        rootPart.AssemblyLinearVelocity = Vector3.zero
-                        rootPart.AssemblyAngularVelocity = Vector3.zero
-                        rootPart.CFrame = CFrame.new(mobRoot.Position + Vector3.new(0, 1.5, 2))
+                if #matchedMobs > 0 then
+                    -- Garante que o índice não estoure a tabela atual
+                    if CurrentTargetIndex > #matchedMobs then
+                        CurrentTargetIndex = 1
                     end
+
+                    local currentMob = matchedMobs[CurrentTargetIndex]
+
+                    -- Se o mob atual for válido e estiver vivo
+                    if currentMob and IsMobSpawnedAndAlive(currentMob) then
+                        local character = LocalPlayer.Character
+                        local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+                        local mobRoot = GetMobRootPart(currentMob)
+
+                        if rootPart and mobRoot then
+                            rootPart.AssemblyLinearVelocity = Vector3.zero
+                            rootPart.AssemblyAngularVelocity = Vector3.zero
+                            rootPart.CFrame = CFrame.new(mobRoot.Position + Vector3.new(0, 1.5, 2))
+                        end
+
+                        -- Temporizador de Segurança (se o mob não morrer em 1.2s, passa para o próximo ID)
+                        if currentMob == LastTargetMob then
+                            TargetStuckTimer = TargetStuckTimer + 0.05
+                            if TargetStuckTimer >= 1.2 then
+                                CurrentTargetIndex = CurrentTargetIndex + 1
+                                TargetStuckTimer = 0
+                            end
+                        else
+                            LastTargetMob = currentMob
+                            TargetStuckTimer = 0
+                        end
+                    else
+                        -- Se o mob morreu/sumiu, avança para o próximo mob com o mesmo Assembly
+                        CurrentTargetIndex = CurrentTargetIndex + 1
+                        TargetStuckTimer = 0
+                    end
+                else
+                    CurrentTargetIndex = 1
+                    LastTargetMob = nil
+                    TargetStuckTimer = 0
                 end
             end)
+        else
+            CurrentTargetIndex = 1
+            LastTargetMob = nil
+            TargetStuckTimer = 0
         end
     end
 end)
