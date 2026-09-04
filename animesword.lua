@@ -63,9 +63,9 @@ local State = {
         ["Namek Invasion"]  = 15
     },
     
-    FastDelay              = 0.05,
-    GamemodeDelay          = 0.01,
-    WorldFarmDelay         = 0.5
+    FastDelay              = 0.01,
+    GamemodeDelay          = 0.1,
+    WorldFarmDelay         = 0.8
 }
 
 local StatsList = { "Energy", "Coins", "Damage", "Luck", "Exp" }
