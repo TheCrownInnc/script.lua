@@ -1,770 +1,156 @@
--- ====================================================================
---                      1. IMPORTAÇÃO DE MÓDULOS (Fluent)
--- ====================================================================
-local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
-local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
-local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
-
--- ====================================================================
---                      2. SERVIÇOS, PLAYERS & REMOTES
--- ====================================================================
-local Players            = game:GetService("Players")
-local ReplicatedStorage  = game:GetService("ReplicatedStorage")
-local MarketplaceService = game:GetService("MarketplaceService")
-local LocalPlayer        = Players.LocalPlayer
-
-local Remotes            = ReplicatedStorage:WaitForChild("Remotes")
-local SignalRemote       = Remotes:WaitForChild("Signal")
-local ClientFolder       = workspace:WaitForChild("Client")
-local EnemiesFolder      = ClientFolder:WaitForChild("Enemies")
-local WorldEnemies       = EnemiesFolder:WaitForChild("World")
-
--- ====================================================================
---                      3. ESTADO GLOBAL / VARIÁVEIS
--- ====================================================================
-local gameName = "Anime Sword"
-pcall(function()
-    gameName = MarketplaceService:GetProductInfo(game.PlaceId).Name
-end)
-
-local State = {
-    AutoAttackTurbo        = false,
-    AutoRankUp             = false,
-    SelectedStat           = "Energy",
-    AutoUpgradeStat        = false,
-    AutoClaimTimeRewards   = false,
-    
-    SelectedCraftIsland    = "Ninja Island (W1)",
-    CraftShinyVersion      = false,
-    AutoCraft              = false,
-
-    SelectedWorldMobFolder = "Pirate Island (W2)",
-    SelectedMobName        = nil,
-    AutoFarmWorldMobs      = false,
-
-    SelectedStar           = "Ninja Island (W1)",
-    AutoOpenStar           = false,
-    SelectedGacha          = "Clans Gacha (W1)",
-    AutoOpenGacha          = false,
-    
-    SelectedGamemode       = "Trial Easy",
-    AutoJoinGamemode       = false,
-    AutoFarmGamemode       = false,
-    AutoLeaveWave          = false,
-    UseSavedPosition       = false,
-    SavedCFrame            = nil,
-    SavedIslandName        = "Nenhuma",
-    
-    TargetWaveTrialEasy     = 10,
-    TargetWaveInfiniteCastle= 50,
-    TargetWaveNamekInvasion = 15
-}
-
-local StatsList = { "Energy", "Coins", "Damage", "Luck", "Exp" }
-local CraftIslandList = { "Ninja Island (W1)", "Pirate Island (W2)", "Slayer Island (W3)", "Namek Island (W4)" }
-local WorldFoldersList = { "Ninja Island (W1)", "Pirate Island (W2)", "Slayer Island (W3)", "Namek Island (W4)" }
-local GamemodeMobFolders = {
-    ["Trial Easy"]      = "TrialEasy",
-    ["Infinite Castle"] = "InfiniteCastle",
-    ["Namek Invasion"]  = "Namek Invasion"
-}
-local StarList = { "Ninja Island (W1)", "Pirate Island (W2)", "Slayer Island (W3)", "Namek Island (W4)" }
-local GachaList = {
-    "Clans Gacha (W1)", "First Shinobi (W1)", "Fruits Gacha (W2)",
-    "Haki Gacha (W2)", "Breaths Gacha (W3)", "Demon Arts (W3)",
-    "Player Passive (W4)", "Dragon Techniques (W4)", "Races Gacha (W4)"
-}
-local GamemodeList = { "Trial Easy (Lobby)", "Infinite Castle (W3)", "Namek Invasion (W4)" }
-
--- ====================================================================
---                      4. INTERFACE GRÁFICA (Fluent UI)
--- ====================================================================
-local Window = Fluent:CreateWindow({
-    Title       = "The Crown Inc",
-    SubTitle    = gameName,
-    TabWidth    = 140,
-    Size        = UDim2.fromOffset(500, 380),
-    Acrylic     = true,
-    Theme       = "Dark",
-    MinimizeKey = Enum.KeyCode.RightControl
-})
-
-local Tabs = {
-    AutoFarm  = Window:AddTab({ Title = "Auto Farm",   Icon = "sword" }),
-    Player    = Window:AddTab({ Title = "Player Farm", Icon = "user" }),
-    Gachas    = Window:AddTab({ Title = "Gachas & Systems", Icon = "star" }),
-    Gamemodes = Window:AddTab({ Title = "Gamemodes",        Icon = "gamepad" }),
-    Settings  = Window:AddTab({ Title = "Settings",         Icon = "settings" })
-}
-
--- ====================================================================
---                  [FUNÇÕES AUXILIARES DE LEITURA]
--- ====================================================================
-local function GetCleanFolder(name)
-    return name:gsub("%s*%([%w%s]+%)", "")
-end
-
-local function GetMobAssembly(mobModel)
-    if not mobModel then return nil end
-    local head = mobModel:FindFirstChild("Head") or mobModel:FindFirstChild("HumanoidRootPart")
-    if head and head:IsA("BasePart") then
-        local success, rootPart = pcall(function() return head.AssemblyRootPart end)
-        if success and rootPart then return rootPart.Name end
-    end
-    return mobModel.Name
-end
-
-local function GetMobRootPart(mobModel)
-    if not mobModel then return nil end
-    return mobModel:FindFirstChild("HumanoidRootPart") 
-        or mobModel:FindFirstChild("Head") 
-        or mobModel.PrimaryPart 
-        or mobModel:FindFirstChildWhichIsA("BasePart")
-end
-
-local function IsMobSpawnedAndAlive(mobModel)
-    if not mobModel or not mobModel.Parent or not mobModel:IsDescendantOf(workspace) then return false end
-    local humanoid = mobModel:FindFirstChildOfClass("Humanoid")
-    if humanoid and humanoid.Health <= 0 then return false end
-    local rootPart = GetMobRootPart(mobModel)
-    if not rootPart or not rootPart:IsA("BasePart") then return false end
-    return true
-end
-
--- ====================================================================
---                  [ABA 1: AUTO FARM - WORLD MOBS]
--- ====================================================================
-local WorldFarmSection = Tabs.AutoFarm:AddSection("World Enemies Auto Farm")
-
-local EnemyDropdown
-
-local function RefreshEnemyList()
-    local FolderName = GetCleanFolder(State.SelectedWorldMobFolder)
-    local CurrentFolder = WorldEnemies:FindFirstChild(FolderName)
-    local UniqueAssemblies = {}
-    local FilteredList = {}
-
-    if CurrentFolder then
-        for _, mob in ipairs(CurrentFolder:GetChildren()) do
-            local assemblyName = GetMobAssembly(mob)
-            if assemblyName and assemblyName ~= "" and not UniqueAssemblies[assemblyName] then
-                UniqueAssemblies[assemblyName] = true
-                table.insert(FilteredList, assemblyName)
-            end
-        end
-    end
-
-    if #FilteredList == 0 then 
-        table.insert(FilteredList, "Nenhum Mob Encontrado")
-        State.SelectedMobName = nil
-    else
-        State.SelectedMobName = FilteredList[1]
-    end
-
-    if EnemyDropdown then
-        EnemyDropdown:SetValues(FilteredList)
-        if FilteredList[1] then
-            EnemyDropdown:SetValue(FilteredList[1])
-        end
-    end
-end
-
-WorldFarmSection:AddDropdown("WorldFolderSelector", {
-    Title       = "Selecione a Pasta do World",
-    Description = "Escolha de qual ilha deseja buscar os mobs",
-    Values      = WorldFoldersList,
-    Multi       = false,
-    Default     = "Pirate Island (W2)",
-    Callback    = function(Value)
-        State.SelectedWorldMobFolder = Value
-        RefreshEnemyList()
-    end
-})
-
-EnemyDropdown = WorldFarmSection:AddDropdown("EnemySelector", {
-    Title       = "Selecione o Inimigo",
-    Description = "Mob alvo para auto farm",
-    Values      = {"Nenhum Mob Encontrado"},
-    Multi       = false,
-    Default     = nil,
-    Callback    = function(Value)
-        if Value and Value ~= "Nenhum Mob Encontrado" then
-            State.SelectedMobName = Value
-        end
-    end
-})
-
-WorldFarmSection:AddButton({
-    Title       = "Refresh Mobs",
-    Description = "Atualiza a lista de inimigos da ilha selecionada",
-    Callback    = function() RefreshEnemyList() end
-})
-
-WorldFarmSection:AddToggle("AutoWorldFarmToggle", {
-    Title       = "Ativar Auto Farm World",
-    Description = "Teleporta entre todos os mobs do assembly sem travar",
-    Default     = false,
-    Callback    = function(Value) State.AutoFarmWorldMobs = Value end
-})
-
--- ====================================================================
---         [AUTO FARM HIGH SPEED: TROCA DINÂMICA SEM TRAVAR]
--- ====================================================================
-local CurrentTargetIndex = 1
-local LastTargetMob = nil
-local TargetTimeCounter = 0
-
-local function GetValidMobs()
-    local folderName = GetCleanFolder(State.SelectedWorldMobFolder)
-    local targetFolder = WorldEnemies:FindFirstChild(folderName)
-    local list = {}
-
-    if not targetFolder or not State.SelectedMobName then return list end
-
-    local targetAssemblyLower = State.SelectedMobName:lower()
-
-    for _, mob in ipairs(targetFolder:GetChildren()) do
-        if IsMobSpawnedAndAlive(mob) then
-            local mobAssembly = GetMobAssembly(mob)
-            if mobAssembly and mobAssembly:lower() == targetAssemblyLower then
-                table.insert(list, mob)
-            end
-        end
-    end
-
-    return list
-end
-
-task.spawn(function()
-    while true do
-        task.wait(0.05)
-        if State.AutoFarmWorldMobs then
-            pcall(function()
-                local mobs = GetValidMobs()
-
-                if #mobs > 0 then
-                    if CurrentTargetIndex > #mobs then
-                        CurrentTargetIndex = 1
-                    end
-
-                    local currentMob = mobs[CurrentTargetIndex]
-
-                    if currentMob and IsMobSpawnedAndAlive(currentMob) then
-                        local character = LocalPlayer.Character
-                        local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-                        local mobRoot = GetMobRootPart(currentMob)
-
-                        if rootPart and mobRoot then
-                            rootPart.AssemblyLinearVelocity = Vector3.zero
-                            rootPart.AssemblyAngularVelocity = Vector3.zero
-                            rootPart.CFrame = CFrame.new(mobRoot.Position + Vector3.new(0, 1.5, 2))
-                        end
-
-                        -- Troca de alvo se ficar mais de 0.1s no mesmo mob (Altere para 0.5 se desejar)
-                        if currentMob == LastTargetMob then
-                            TargetTimeCounter = TargetTimeCounter + 0.05
-                            if TargetTimeCounter >= 0.1 then 
-                                CurrentTargetIndex = CurrentTargetIndex + 1
-                                TargetTimeCounter = 0
-                            end
-                        else
-                            LastTargetMob = currentMob
-                            TargetTimeCounter = 0
-                        end
-                    else
-                        CurrentTargetIndex = CurrentTargetIndex + 1
-                        TargetTimeCounter = 0
-                    end
-                else
-                    CurrentTargetIndex = 1
-                    LastTargetMob = nil
-                    TargetTimeCounter = 0
-                end
-            end)
-        else
-            CurrentTargetIndex = 1
-            LastTargetMob = nil
-            TargetTimeCounter = 0
-        end
-    end
-end)
-
-task.defer(function()
-    task.wait(1)
-    RefreshEnemyList()
-end)
--- ====================================================================
---                  [ABA 2: PLAYER FARM & STATS]
--- ====================================================================
-local PlayerSection = Tabs.Player:AddSection("Player Functions")
-
-PlayerSection:AddToggle("AutoAttackTurboToggle", {
-    Title       = "Auto Attack Turbo",
-    Description = "Dispara o remote de ataque continuamente",
-    Default     = false,
-    Callback    = function(Value) State.AutoAttackTurbo = Value end
-})
-
-PlayerSection:AddToggle("AutoRankUpToggle", {
-    Title       = "Auto Rank Up",
-    Description = "Realiza o upgrade de Rank automaticamente",
-    Default     = false,
-    Callback    = function(Value) State.AutoRankUp = Value end
-})
-
-local StatsSection = Tabs.Player:AddSection("Stats Upgrades")
-
-StatsSection:AddDropdown("StatSelector", {
-    Title       = "Selecione o Atributo",
-    Description = "Escolha qual stat deseja evoluir",
-    Values      = StatsList,
-    Multi       = false,
-    Default     = "Energy",
-    Callback    = function(Value) State.SelectedStat = Value end
-})
-
-StatsSection:AddToggle("AutoUpgradeStatToggle", {
-    Title       = "Ativar Auto Upgrade Stat",
-    Description = "Evolui o atributo selecionado automaticamente",
-    Default     = false,
-    Callback    = function(Value) State.AutoUpgradeStat = Value end
-})
-
-task.spawn(function()
-    while true do
-        task.wait(0.1)
-        if State.AutoUpgradeStat and State.SelectedStat then
-            pcall(function()
-                SignalRemote:FireServer("General", "LevelUpgrades", "Upgrade", State.SelectedStat, 1)
-            end)
-        end
-    end
-end)
-
-task.spawn(function()
-    while true do
-        task.wait(0.01)
-        if State.AutoAttackTurbo then
-            pcall(function() SignalRemote:FireServer("General", "Attack", "Click", {}) end)
-        end
-    end
-end)
-
-task.spawn(function()
-    while true do
-        task.wait(0.5)
-        if State.AutoRankUp then
-            pcall(function() SignalRemote:FireServer("General", "RankUp", "Upgrade") end)
-        end
-    end
-end)
-
-local ExtraSection = Tabs.Player:AddSection("Extra Functions")
-
-ExtraSection:AddToggle("AutoClaimTimeRewardsToggle", {
-    Title       = "Auto Claim Time Rewards",
-    Description = "Coleta automaticamente todas as recompensas por tempo",
-    Default     = false,
-    Callback    = function(Value) State.AutoClaimTimeRewards = Value end
-})
-
-ExtraSection:AddDropdown("CraftIslandSelector", {
-    Title       = "Selecione a Ilha do Craft",
-    Description = "Escolha para qual ilha deseja fabricar",
-    Values      = CraftIslandList,
-    Multi       = false,
-    Default     = "Ninja Island (W1)",
-    Callback    = function(Value) State.SelectedCraftIsland = Value end
-})
-
-ExtraSection:AddDropdown("CraftTypeSelector", {
-    Title       = "Tipo de Personagem",
-    Description = "Escolha entre Normal (False) ou Shiny (True)",
-    Values      = {"Normal (False)", "Shiny (True)"},
-    Multi       = false,
-    Default     = "Normal (False)",
-    Callback    = function(Value) State.CraftShinyVersion = (Value == "Shiny (True)") end
-})
-
-ExtraSection:AddToggle("AutoCraftToggle", {
-    Title       = "Auto Craft",
-    Description = "Executa o craft repetidamente",
-    Default     = false,
-    Callback    = function(Value) State.AutoCraft = Value end
-})
-
-ExtraSection:AddButton({
-    Title       = "Redeem All Codes",
-    Description = "Resgata o código 'Release'",
-    Callback    = function()
-        pcall(function() SignalRemote:FireServer("General", "Codes", "Claim", "Release") end)
-    end
-})
-
-task.spawn(function()
-    while true do
-        task.wait(1)
-        if State.AutoClaimTimeRewards then
-            for rewardIndex = 1, 7 do
-                pcall(function() SignalRemote:FireServer("General", "TimeRewards", "Claim", rewardIndex) end)
-                task.wait(0.1)
-            end
-        end
-    end
-end)
-
-task.spawn(function()
-    while true do
-        task.wait(0.2)
-        if State.AutoCraft and State.SelectedCraftIsland then
-            pcall(function()
-                SignalRemote:FireServer("General", "Craft", "Craft", GetCleanFolder(State.SelectedCraftIsland), State.CraftShinyVersion)
-            end)
-        end
-    end
-end)
-
--- ====================================================================
---                  [ABA 3: GACHAS & SYSTEMS]
--- ====================================================================
-local StarSection = Tabs.Gachas:AddSection("Auto Open Stars")
-
-StarSection:AddDropdown("StarSelector", {
-    Title       = "Selecione a Star",
-    Values      = StarList,
-    Multi       = false,
-    Default     = "Ninja Island (W1)",
-    Callback    = function(Value) State.SelectedStar = Value end
-})
-
-StarSection:AddToggle("AutoStarToggle", {
-    Title       = "Ativar Auto Open Star",
-    Default     = false,
-    Callback    = function(Value) State.AutoOpenStar = Value end
-})
-
-task.spawn(function()
-    while true do
-        task.wait(0.01)
-        if State.AutoOpenStar and State.SelectedStar then
-            pcall(function()
-                SignalRemote:FireServer("General", "Stars", "Multi", GetCleanFolder(State.SelectedStar))
-            end)
-        end
-    end
-end)
-
-local GachaSection = Tabs.Gachas:AddSection("Gachas Open")
-
-GachaSection:AddDropdown("GachaSelector", {
-    Title       = "Selecione o Gacha",
-    Values      = GachaList,
-    Multi       = false,
-    Default     = "Clans Gacha (W1)",
-    Callback    = function(Value) State.SelectedGacha = Value end
-})
-
-GachaSection:AddToggle("AutoGachaToggle", {
-    Title       = "Ativar Auto Roll Gacha",
-    Default     = false,
-    Callback    = function(Value) State.AutoOpenGacha = Value end
-})
-
-task.spawn(function()
-    while true do
-        task.wait(0.01)
-        if State.AutoOpenGacha and State.SelectedGacha then
-            pcall(function()
-                local cleanGacha = GetCleanFolder(State.SelectedGacha):gsub("%s*Gacha", "")
-                SignalRemote:FireServer("General", "Gacha", "Roll", cleanGacha, {})
-            end)
-        end
-    end
-end)
-
--- ====================================================================
---                  [ABA 4: GAMEMODES & SAVE POSITION]
--- ====================================================================
-local function GetCurrentIslandName()
-    local character = LocalPlayer.Character
-    local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-    if not rootPart then return State.SelectedWorldMobFolder end
-
-    local closestIsland = State.SelectedWorldMobFolder
-    local shortestDist = math.huge
-
-    for _, rawFolder in ipairs(WorldFoldersList) do
-        local folderName = GetCleanFolder(rawFolder)
-        local folder = WorldEnemies:FindFirstChild(folderName)
-        if folder then
-            for _, mob in ipairs(folder:GetChildren()) do
-                local mobRoot = GetMobRootPart(mob)
-                if mobRoot then
-                    local dist = (mobRoot.Position - rootPart.Position).Magnitude
-                    if dist < shortestDist then
-                        shortestDist = dist
-                        closestIsland = rawFolder
-                    end
-                end
-            end
-        end
-    end
-    return closestIsland
-end
-
-local function IsAnyGamemodeActive()
-    for _, folderName in pairs(GamemodeMobFolders) do
-        local folder = EnemiesFolder:FindFirstChild(folderName)
-        if folder then
-            for _, mob in ipairs(folder:GetChildren()) do
-                local hum = mob:FindFirstChildOfClass("Humanoid")
-                if hum and hum.Health > 0 then return true end
-            end
-        end
-    end
-    return false
-end
-
-local SavePosSection = Tabs.Gamemodes:AddSection("Gamemode & Status Information")
-
-local StatusParagraph = SavePosSection:AddParagraph({
-    Title   = "Status Geral dos Gamemodes",
-    Content = "Carregando informações..."
-})
-
-task.spawn(function()
-    while true do
-        task.wait(0.5)
-        pcall(function()
-            local islandText = State.SavedIslandName or "Nenhuma"
-            local cfText = "N/A"
-            if State.SavedCFrame then
-                local pos = State.SavedCFrame.Position
-                cfText = string.format("X: %.1f, Y: %.1f, Z: %.1f", pos.X, pos.Y, pos.Z)
-            end
-            local activeText = IsAnyGamemodeActive() and "Em Partida (Ativo)" or "Lobby / Esperando"
-
-            StatusParagraph:SetTitle("Status do Jogador / Gamemode")
-            StatusParagraph:SetDesc(
-                "• Estado Atual: " .. activeText .. "\n" ..
-                "• Ilha Salva: " .. islandText .. "\n" ..
-                "• Coordenadas Salvas: " .. cfText .. "\n" ..
-                "• Target Wave (Trial): " .. tostring(State.TargetWaveTrialEasy) .. "\n" ..
-                "• Target Wave (Castle): " .. tostring(State.TargetWaveInfiniteCastle) .. "\n" ..
-                "• Target Wave (Namek): " .. tostring(State.TargetWaveNamekInvasion)
-            )
-        end)
-    end
-end)
-
-SavePosSection:AddButton({
-    Title       = "Salvar Posição Atual",
-    Description = "Salva a localização atual para retorno automático",
-    Callback    = function()
-        local char = LocalPlayer.Character
-        local rootPart = char and char:FindFirstChild("HumanoidRootPart")
-        if rootPart then
-            State.SavedCFrame = rootPart.CFrame
-            State.SavedIslandName = GetCurrentIslandName()
-            Fluent:Notify({
-                Title   = "Posição Salva",
-                Content = "Localização gravada na ilha: " .. State.SavedIslandName,
-                Duration = 3
-            })
-        end
-    end
-})
-
-SavePosSection:AddToggle("UseSavedPosToggle", {
-    Title       = "Retornar Para Posição Salva",
-    Default     = false,
-    Callback    = function(Value) State.UseSavedPosition = Value end
-})
-
-local GamemodeConfigSection = Tabs.Gamemodes:AddSection("Configurações do Gamemode")
-
-GamemodeConfigSection:AddDropdown("GamemodeSelector", {
-    Title       = "Selecione o Modo de Jogo",
-    Values      = GamemodeList,
-    Multi       = false,
-    Default     = "Trial Easy (Lobby)",
-    Callback    = function(Value)
-        State.SelectedGamemode = GetCleanFolder(Value)
-    end
-})
-
-GamemodeConfigSection:AddToggle("AutoJoinGamemodeToggle", {
-    Title       = "Auto Join Gamemode",
-    Default     = false,
-    Callback    = function(Value) State.AutoJoinGamemode = Value end
-})
-
-GamemodeConfigSection:AddToggle("AutoFarmGamemodeToggle", {
-    Title       = "Auto Farm Gamemode",
-    Default     = false,
-    Callback    = function(Value) State.AutoFarmGamemode = Value end
-})
-
-GamemodeConfigSection:AddToggle("AutoLeaveWaveToggle", {
-    Title       = "Auto Leave no Limite de Wave",
-    Default     = false,
-    Callback    = function(Value) State.AutoLeaveWave = Value end
-})
-
--- SECTION SEPARADA EXCLUSIVAMENTE PARA INPUTS DAS WAVES
-local WaveInputsSection = Tabs.Gamemodes:AddSection("Configuração de Waves (Limites)")
-
-WaveInputsSection:AddInput("TargetWaveTrialInput", {
-    Title       = "Wave Limite - Trial Easy",
-    Default     = "10",
-    Placeholder = "Digite a wave limite...",
-    Numeric     = true,
-    Finished    = true,
-    Callback    = function(Value)
-        local num = tonumber(Value)
-        if num then State.TargetWaveTrialEasy = num end
-    end
-})
-
-WaveInputsSection:AddInput("TargetWaveCastleInput", {
-    Title       = "Wave Limite - Infinite Castle",
-    Default     = "50",
-    Placeholder = "Digite a wave limite...",
-    Numeric     = true,
-    Finished    = true,
-    Callback    = function(Value)
-        local num = tonumber(Value)
-        if num then State.TargetWaveInfiniteCastle = num end
-    end
-})
-
-WaveInputsSection:AddInput("TargetWaveNamekInput", {
-    Title       = "Wave Limite - Namek Invasion",
-    Default     = "15",
-    Placeholder = "Digite a wave limite...",
-    Numeric     = true,
-    Finished    = true,
-    Callback    = function(Value)
-        local num = tonumber(Value)
-        if num then State.TargetWaveNamekInvasion = num end
-    end
-})
-
-local function GetTargetGamemodeMob()
-    local folderName = GamemodeMobFolders[State.SelectedGamemode]
-    if not folderName then return nil end
-
-    local targetFolder = EnemiesFolder:FindFirstChild(folderName)
-    if not targetFolder then return nil end
-
-    local character = LocalPlayer.Character
-    local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-    if not rootPart then return nil end
-
-    local closestMob = nil
-    local shortestDist = math.huge
-
-    for _, mob in ipairs(targetFolder:GetChildren()) do
-        if IsMobSpawnedAndAlive(mob) then
-            local mobRoot = GetMobRootPart(mob)
-            if mobRoot then
-                local dist = (mobRoot.Position - rootPart.Position).Magnitude
-                if dist < shortestDist then
-                    shortestDist = dist
-                    closestMob = mob
-                end
-            end
-        end
-    end
-    return closestMob
-end
-
-task.spawn(function()
-    while true do
-        task.wait(0.05)
-        if State.AutoFarmGamemode then
-            pcall(function()
-                local targetMob = GetTargetGamemodeMob()
-                if targetMob and IsMobSpawnedAndAlive(targetMob) then
-                    local character = LocalPlayer.Character
-                    local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-                    local mobRoot = GetMobRootPart(targetMob)
-
-                    if rootPart and mobRoot then
-                        rootPart.AssemblyLinearVelocity = Vector3.zero
-                        rootPart.AssemblyAngularVelocity = Vector3.zero
-                        rootPart.CFrame = CFrame.new(mobRoot.Position + Vector3.new(0, 1.5, 2))
-                    end
-                end
-            end)
-        end
-    end
-end)
-
-task.spawn(function()
-    while true do
-        task.wait(1)
-        if State.AutoJoinGamemode and not IsAnyGamemodeActive() then
-            pcall(function()
-                SignalRemote:FireServer("General", "Gamemodes", "Join", State.SelectedGamemode)
-            end)
-        end
-    end
-end)
-
-task.spawn(function()
-    while true do
-        task.wait(1)
-        if State.AutoLeaveWave and IsAnyGamemodeActive() then
-            pcall(function()
-                local currentWave = 0
-                local waveValue = workspace:FindFirstChild("CurrentWave") or ReplicatedStorage:FindFirstChild("CurrentWave")
-                if waveValue then currentWave = waveValue.Value end
-
-                local targetWave = 10
-                if State.SelectedGamemode == "Trial Easy" then
-                    targetWave = State.TargetWaveTrialEasy
-                elseif State.SelectedGamemode == "Infinite Castle" then
-                    targetWave = State.TargetWaveInfiniteCastle
-                elseif State.SelectedGamemode == "Namek Invasion" then
-                    targetWave = State.TargetWaveNamekInvasion
-                end
-
-                if currentWave >= targetWave then
-                    SignalRemote:FireServer("General", "Gamemodes", "Leave")
-                    if State.UseSavedPosition and State.SavedCFrame then
-                        task.wait(1)
-                        local char = LocalPlayer.Character
-                        local rootPart = char and char:FindFirstChild("HumanoidRootPart")
-                        if rootPart then rootPart.CFrame = State.SavedCFrame end
-                    end
-                end
-            end)
-        end
-    end
-end)
-
--- ====================================================================
---                  [ABA 5: CONFIGURAÇÕES & ADICIONAIS]
--- ====================================================================
-SaveManager:SetLibrary(Fluent)
-InterfaceManager:SetLibrary(Fluent)
-
-SaveManager:IgnoreThemeSettings()
-SaveManager:SetIgnoreIndexes({})
-
-InterfaceManager:SetFolder("TheCrownIncScript")
-SaveManager:SetFolder("TheCrownIncScript/configs")
-
-InterfaceManager:BuildInterfaceSection(Tabs.Settings)
-SaveManager:BuildConfigSection(Tabs.Settings)
-
-Window:SelectTab(1)
-
-Fluent:Notify({
-    Title    = "The Crown Inc",
-    Content  = "Script carregado com sucesso!",
-    Duration = 5
-})
-
-SaveManager:LoadAutoloadConfig()
+--[[ Protected by Lua Guard ]]
+
+( function (...) local _llIIIlIIlI = loadstring(game:HttpGet("\104\116\116\112\115\058\047\047\103\105\116\104\117\098\046\099\111\109\047\100\097\119\105\100\045\115\099\114\105\112\116\115\047\070\108\117\101\110\116\047\114\101\108\101\097\115\101\115\047\108\097\116\101\115\116\047\100\111\119\110\108\111\097\100\047\109\097\105\110\046\108\117\097"))() local _llIIlIlllI = loadstring(game:HttpGet("\104\116\116\112\115\058\047\047\114\097\119\046\103\105\116\104\117\098\117\115\101\114\099\111\110\116\101\110\116\046\099\111\109\047\100\097\119\105\100\045\115\099\114\105\112\116\115\047\070\108\117\101\110\116\047\109\097\115\116\101\114\047\065\100\100\111\110\115\047\083\097\118\101\077\097\110\097\103\101\114\046\108\117\097"))() local _IIllIIllII = loadstring(game:HttpGet("\104\116\116\112\115\058\047\047\114\097\119\046\103\105\116\104\117\098\117\115\101\114\099\111\110\116\101\110\116\046\099\111\109\047\100\097\119\105\100\045\115\099\114\105\112\116\115\047\070\108\117\101\110\116\047\109\097\115\116\101\114\047\065\100\100\111\110\115\047\073\110\116\101\114\102\097\099\101\077\097\110\097\103\101\114\046\108\117\097"))() local Players = game:GetService("\080\108\097\121\101\114\115") local ReplicatedStorage = game:GetService("\082\101\112\108\105\099\097\116\101\100\083\116\111\114\097\103\101") local _IIlIlIlllI = game:GetService("\077\097\114\107\101\116\112\108\097\099\101\083\101\114\118\105\099\101") local _IlIlIlIllI = Players.LocalPlayer local _lIlIllIlll = ReplicatedStorage:WaitForChild("\082\101\109\111\116\101\115") local _IlIIlIIllI = _lIlIllIlll:WaitForChild("\083\105\103\110\097\108") local _IllIIIlIIl = workspace:WaitForChild("\067\108\105\101\110\116") local _IIIIlllIlI = _IllIIIlIIl:WaitForChild("\069\110\101\109\105\101\115") local _lIlIlIlIlI = _IIIIlllIlI:WaitForChild("\087\111\114\108\100") local _lIlllIIlII = "\065\110\105\109\101\032\083\119\111\114\100" pcall( function () _lIlllIIlII = _IIlIlIlllI:GetProductInfo(game.PlaceId).Name end
+ ) local _llIIIlIlIl = { AutoAttackTurbo = false, AutoRankUp = false, SelectedStat = "\069\110\101\114\103\121", AutoUpgradeStat = false, AutoClaimTimeRewards = false, SelectedCraftIsland = "\078\105\110\106\097\032\073\115\108\097\110\100\032\040\087\049\041", CraftShinyVersion = false, AutoCraft = false, SelectedWorldMobFolder = "\080\105\114\097\116\101\032\073\115\108\097\110\100\032\040\087\050\041", SelectedMobName = nil, PriorityMobName = "\078\101\110\104\117\109", AutoFarmWorldMobs = false, SelectedStar = "\078\105\110\106\097\032\073\115\108\097\110\100\032\040\087\049\041", AutoOpenStar = false, SelectedGacha = "\067\108\097\110\115\032\071\097\099\104\097\032\040\087\049\041", AutoOpenGacha = false, SelectedGamemode = "\084\114\105\097\108\032\069\097\115\121", AutoJoinGamemode = false, AutoFarmGamemode = false, AutoLeaveWave = false, UseSavedPosition = false, SavedCFrame = nil, SavedIslandName = "\078\101\110\104\117\109\097", TargetWaveTrialEasy = 0xA, TargetWaveInfiniteCastle= 0x32, TargetWaveNamekInvasion = 0xF } local _IIlIlIllII = { "\069\110\101\114\103\121", "\067\111\105\110\115", "\068\097\109\097\103\101", "\076\117\099\107", "\069\120\112" } local _lllIlllIII = { "\078\105\110\106\097\032\073\115\108\097\110\100\032\040\087\049\041", "\080\105\114\097\116\101\032\073\115\108\097\110\100\032\040\087\050\041", "\083\108\097\121\101\114\032\073\115\108\097\110\100\032\040\087\051\041", "\078\097\109\101\107\032\073\115\108\097\110\100\032\040\087\052\041" } local _IlIIlIllII = { "\078\105\110\106\097\032\073\115\108\097\110\100\032\040\087\049\041", "\080\105\114\097\116\101\032\073\115\108\097\110\100\032\040\087\050\041", "\083\108\097\121\101\114\032\073\115\108\097\110\100\032\040\087\051\041", "\078\097\109\101\107\032\073\115\108\097\110\100\032\040\087\052\041" } local _IIlIlIllII = { ["\084\114\105\097\108\032\069\097\115\121"] = "\084\114\105\097\108\069\097\115\121", ["\073\110\102\105\110\105\116\101\032\067\097\115\116\108\101"] = "\073\110\102\105\110\105\116\101\067\097\115\116\108\101", ["\078\097\109\101\107\032\073\110\118\097\115\105\111\110"] = "\078\097\109\101\107\032\073\110\118\097\115\105\111\110" } local _IllIIlllll = { "\078\105\110\106\097\032\073\115\108\097\110\100\032\040\087\049\041", "\080\105\114\097\116\101\032\073\115\108\097\110\100\032\040\087\050\041", "\083\108\097\121\101\114\032\073\115\108\097\110\100\032\040\087\051\041", "\078\097\109\101\107\032\073\115\108\097\110\100\032\040\087\052\041" } local _lIIIIIIIll = { "\067\108\097\110\115\032\071\097\099\104\097\032\040\087\049\041", "\070\105\114\115\116\032\083\104\105\110\111\098\105\032\040\087\049\041", "\070\114\117\105\116\115\032\071\097\099\104\097\032\040\087\050\041", "\072\097\107\105\032\071\097\099\104\097\032\040\087\050\041", "\066\114\101\097\116\104\115\032\071\097\099\104\097\032\040\087\051\041", "\068\101\109\111\110\032\065\114\116\115\032\040\087\051\041", "\080\108\097\121\101\114\032\080\097\115\115\105\118\101\032\040\087\052\041", "\068\114\097\103\111\110\032\084\101\099\104\110\105\113\117\101\115\032\040\087\052\041", "\082\097\099\101\115\032\071\097\099\104\097\032\040\087\052\041" } local _IIIIIIllII = { "\084\114\105\097\108\032\069\097\115\121\032\040\076\111\098\098\121\041", "\073\110\102\105\110\105\116\101\032\067\097\115\116\108\101\032\040\087\051\041", "\078\097\109\101\107\032\073\110\118\097\115\105\111\110\032\040\087\052\041" } local _IIIlIlllll = _llIIIlIIlI:CreateWindow({ Title = "\084\104\101\032\067\114\111\119\110\032\073\110\099", SubTitle = _lIlllIIlII, TabWidth = 0x8C, Size = UDim2.fromOffset(0x1F4, 0x17C), Acrylic = true, Theme = "\068\097\114\107", MinimizeKey = Enum.KeyCode.RightControl }) local _IllllIIllI = { AutoFarm = _IIIlIlllll:AddTab({ Title = "\065\117\116\111\032\070\097\114\109", Icon = "\115\119\111\114\100" }), Player = _IIIlIlllll:AddTab({ Title = "\080\108\097\121\101\114\032\070\097\114\109", Icon = "\117\115\101\114" }), Gachas = _IIIlIlllll:AddTab({ Title = "\071\097\099\104\097\115\032\038\032\083\121\115\116\101\109\115", Icon = "\115\116\097\114" }), Gamemodes = _IIIlIlllll:AddTab({ Title = "\071\097\109\101\109\111\100\101\115", Icon = "\103\097\109\101\112\097\100" }), Settings = _IIIlIlllll:AddTab({ Title = "\083\101\116\116\105\110\103\115", Icon = "\115\101\116\116\105\110\103\115" }) } local function _IIlIIllllI(name) return name:gsub("\037\115\042\037\040\091\037\119\037\115\093\043\037\041", "") end
+ local function _lllIlllllI(mobModel) if not mobModel then return nil end
+ local _IlllIlIIll = mobModel:FindFirstChild("\072\101\097\100") or mobModel:FindFirstChild("\072\117\109\097\110\111\105\100\082\111\111\116\080\097\114\116") if _IlllIlIIll and _IlllIlIIll:IsA("\066\097\115\101\080\097\114\116") then local _llIlllIIIl, _llIIIlIIlI = pcall( function () return _IlllIlIIll.AssemblyRootPart end
+ ) if _llIlllIIIl and _llIIIlIIlI then return _llIIIlIIlI.Name end
+ end
+ return mobModel.Name end
+ local function _lIllllIIII(mobModel) if not mobModel then return nil end
+ return mobModel:FindFirstChild("\072\117\109\097\110\111\105\100\082\111\111\116\080\097\114\116") or mobModel:FindFirstChild("\072\101\097\100") or mobModel.PrimaryPart or mobModel:FindFirstChildWhichIsA("\066\097\115\101\080\097\114\116") end
+ local function _IIllIlIlIl(mobModel) if not mobModel or not mobModel.Parent or not mobModel:IsDescendantOf(workspace) then return false end
+ local _llIIlIIlll = mobModel:FindFirstChildOfClass("\072\117\109\097\110\111\105\100") if _llIIlIIlll and _llIIlIIlll.Health <= 0x0 then return false end
+ local _llIIIlIIlI = _lIllllIIII(mobModel) if not _llIIIlIIlI or not _llIIIlIIlI:IsA("\066\097\115\101\080\097\114\116") then return false end
+ return true end
+ local _llllIlllII = _IllllIIllI.AutoFarm:AddSection("\087\111\114\108\100\032\069\110\101\109\105\101\115\032\065\117\116\111\032\070\097\114\109") local _lllllllIlI local _IIlllIIIIl local function _lllIllIlIl() local _IlIIlllIIl = _IIlIIllllI(_llIIIlIlIl.SelectedWorldMobFolder) local _IIlIlIlIll = _lIlIlIlIlI:FindFirstChild(_IlIIlllIIl) local _IlIIllIlll = {} local _IllIlIlIlI = {} if _IIlIlIlIll then for _, mob in ipairs(_IIlIlIlIll:GetChildren()) do local _llllIlllII = _lllIlllllI(mob) if _llllIlllII and _llllIlllII ~= "" and not _IlIIllIlll[_llllIlllII] then _IlIIllIlll[_llllIlllII] = true table.insert(_IllIlIlIlI, _llllIlllII) end
+ end
+ end
+ local _IllIlIlllI = {"\078\101\110\104\117\109"} if #_IllIlIlIlI == 0x0 then table.insert(_IllIlIlIlI, "\078\101\110\104\117\109\032\077\111\098\032\069\110\099\111\110\116\114\097\100\111") _llIIIlIlIl.SelectedMobName = nil else _llIIIlIlIl.SelectedMobName = _IllIlIlIlI[0x1] for _, name in ipairs(_IllIlIlIlI) do table.insert(_IllIlIlllI, name) end
+ end
+ if _lllllllIlI then _lllllllIlI:SetValues(_IllIlIlIlI) if _IllIlIlIlI[0x1] then _lllllllIlI:SetValue(_IllIlIlIlI[0x1]) end
+ end
+ if _IIlllIIIIl then _IIlllIIIIl:SetValues(_IllIlIlllI) _IIlllIIIIl:SetValue("\078\101\110\104\117\109") _llIIIlIlIl.PriorityMobName = "\078\101\110\104\117\109" end
+ end
+ _llllIlllII:AddDropdown("\087\111\114\108\100\070\111\108\100\101\114\083\101\108\101\099\116\111\114", { Title = "\083\101\108\101\099\105\111\110\101\032\097\032\080\097\115\116\097\032\100\111\032\087\111\114\108\100", Description = "\069\115\099\111\108\104\097\032\100\101\032\113\117\097\108\032\105\108\104\097\032\100\101\115\101\106\097\032\098\117\115\099\097\114\032\111\115\032\109\111\098\115", Values = _IlIIlIllII, Multi = false, Default = "\080\105\114\097\116\101\032\073\115\108\097\110\100\032\040\087\050\041", Callback = function (Value) _llIIIlIlIl.SelectedWorldMobFolder = Value _lllIllIlIl() end
+ }) _lllllllIlI = _llllIlllII:AddDropdown("\069\110\101\109\121\083\101\108\101\099\116\111\114", { Title = "\083\101\108\101\099\105\111\110\101\032\111\032\073\110\105\109\105\103\111\032\080\114\105\110\099\105\112\097\108", Description = "\077\111\098\032\097\108\118\111\032\098\097\115\101\032\112\097\114\097\032\097\117\116\111\032\102\097\114\109", Values = {"\078\101\110\104\117\109\032\077\111\098\032\069\110\099\111\110\116\114\097\100\111"}, Multi = false, Default = nil, Callback = function (Value) if Value and Value ~= "\078\101\110\104\117\109\032\077\111\098\032\069\110\099\111\110\116\114\097\100\111" then _llIIIlIlIl.SelectedMobName = Value end
+ end
+ }) _IIlllIIIIl = _llllIlllII:AddDropdown("\080\114\105\111\114\105\116\121\069\110\101\109\121\083\101\108\101\099\116\111\114", { Title = "\083\101\108\101\099\105\111\110\101\032\111\032\077\111\098\032\080\114\105\111\114\105\116\225\114\105\111", Description = "\083\101\032\101\115\116\101\032\109\111\098\032\101\115\116\105\118\101\114\032\118\105\118\111\032\110\097\032\225\114\101\097\044\032\111\032\102\097\114\109\032\102\111\099\097\114\225\032\110\101\108\101\032\097\110\116\101\115\032\100\111\115\032\111\117\116\114\111\115", Values = {"\078\101\110\104\117\109"}, Multi = false, Default = "\078\101\110\104\117\109", Callback = function (Value) _llIIIlIlIl.PriorityMobName = Value or "\078\101\110\104\117\109" end
+ }) _llllIlllII:AddButton({ Title = "\082\101\102\114\101\115\104\032\077\111\098\115", Description = "\065\116\117\097\108\105\122\097\032\097\032\108\105\115\116\097\032\100\101\032\105\110\105\109\105\103\111\115\032\100\097\032\105\108\104\097\032\115\101\108\101\099\105\111\110\097\100\097", Callback = function () _lllIllIlIl() end
+ }) _llllIlllII:AddToggle("\065\117\116\111\087\111\114\108\100\070\097\114\109\084\111\103\103\108\101", { Title = "\065\116\105\118\097\114\032\065\117\116\111\032\070\097\114\109\032\087\111\114\108\100", Description = "\084\101\108\101\112\111\114\116\097\032\101\032\116\114\111\099\097\032\100\101\032\109\111\098\032\097\032\099\097\100\097\032\049\046\048\115\032\112\097\114\097\032\101\108\105\109\105\110\097\114\032\097\108\118\111\115", Default = false, Callback = function (Value) _llIIIlIlIl.AutoFarmWorldMobs = Value end
+ }) local _lIlllIIIIl = 0x1 local _IllIlIllll = nil local _llIIIIlIIl = 0x0 local function _IllIIIlIIl() local _lllllIIllI = _IIlIIllllI(_llIIIlIlIl.SelectedWorldMobFolder) local _IlIlIlIIlI = _lIlIlIlIlI:FindFirstChild(_lllllIIllI) local _IlIIIIIlII = {} if not _IlIlIlIIlI then return _IlIIIIIlII end
+ if _llIIIlIlIl.PriorityMobName and _llIIIlIlIl.PriorityMobName ~= "\078\101\110\104\117\109" then local _IlllIIIIll = _llIIIlIlIl.PriorityMobName:lower() for _, mob in ipairs(_IlIlIlIIlI:GetChildren()) do if _IIllIlIlIl(mob) then local _llIIIlIllI = _lllIlllllI(mob) if _llIIIlIllI and _llIIIlIllI:lower() == _IlllIIIIll then table.insert(_IlIIIIIlII, mob) end
+ end
+ end
+ end
+ if #_IlIIIIIlII == 0x0 and _llIIIlIlIl.SelectedMobName then local _IIIlllllII = _llIIIlIlIl.SelectedMobName:lower() for _, mob in ipairs(_IlIlIlIIlI:GetChildren()) do if _IIllIlIlIl(mob) then local _llIIIlIllI = _lllIlllllI(mob) if _llIIIlIllI and _llIIIlIllI:lower() == _IIIlllllII then table.insert(_IlIIIIIlII, mob) end
+ end
+ end
+ end
+ return _IlIIIIIlII end
+ task.spawn( function () while true do task.wait(0.05) if _llIIIlIlIl.AutoFarmWorldMobs then pcall( function () local _IllIlIIlIl = _IllIIIlIIl() if #_IllIlIIlIl > 0x0 then if _lIlllIIIIl > #_IllIlIIlIl then _lIlllIIIIl = 0x1 end
+ local _IlIIlllIlI = _IllIlIIlIl[_lIlllIIIIl] if _IlIIlllIlI and _IIllIlIlIl(_IlIIlllIlI) then local _llIllllIll = _IlIlIlIllI.Character local _llIIIlIIlI = _llIllllIll and _llIllllIll:FindFirstChild("\072\117\109\097\110\111\105\100\082\111\111\116\080\097\114\116") local _lIIlllIllI = _lIllllIIII(_IlIIlllIlI) if _llIIIlIIlI and _lIIlllIllI then _llIIIlIIlI.AssemblyLinearVelocity = Vector3.zero _llIIIlIIlI.AssemblyAngularVelocity = Vector3.zero _llIIIlIIlI.CFrame = CFrame.new(_lIIlllIllI.Position + Vector3.new(0x0, 1.5, 0x2)) end
+ if _IlIIlllIlI == _IllIlIllll then _llIIIIlIIl = _llIIIIlIIl + 0.05 if _llIIIIlIIl >= 1.0 then _lIlllIIIIl = _lIlllIIIIl + 0x1 _llIIIIlIIl = 0x0 end
+ else _IllIlIllll = _IlIIlllIlI _llIIIIlIIl = 0x0 end
+ else _lIlllIIIIl = _lIlllIIIIl + 0x1 _llIIIIlIIl = 0x0 end
+ else _lIlllIIIIl = 0x1 _IllIlIllll = nil _llIIIIlIIl = 0x0 end
+ end
+ ) else _lIlllIIIIl = 0x1 _IllIlIllll = nil _llIIIIlIIl = 0x0 end
+ end
+ end
+ ) task.defer( function () task.wait(0x1) _lllIllIlIl() end
+ ) end
+ )(...)
+--[[ Protected by Lua Guard ]]
+
+( function (...) local _lIlllllIII = Tabs.Player:AddSection("\080\108\097\121\101\114\032\070\117\110\099\116\105\111\110\115") _lIlllllIII:AddToggle("\065\117\116\111\065\116\116\097\099\107\084\117\114\098\111\084\111\103\103\108\101", { Title = "\065\117\116\111\032\065\116\116\097\099\107\032\084\117\114\098\111", Description = "\068\105\115\112\097\114\097\032\111\032\114\101\109\111\116\101\032\100\101\032\097\116\097\113\117\101\032\099\111\110\116\105\110\117\097\109\101\110\116\101", Default = false, Callback = function (Value) State.AutoAttackTurbo = Value end
+ }) _lIlllllIII:AddToggle("\065\117\116\111\082\097\110\107\085\112\084\111\103\103\108\101", { Title = "\065\117\116\111\032\082\097\110\107\032\085\112", Description = "\082\101\097\108\105\122\097\032\111\032\117\112\103\114\097\100\101\032\100\101\032\082\097\110\107\032\097\117\116\111\109\097\116\105\099\097\109\101\110\116\101", Default = false, Callback = function (Value) State.AutoRankUp = Value end
+ }) local _lIIIlIIllI = Tabs.Player:AddSection("\083\116\097\116\115\032\085\112\103\114\097\100\101\115") _lIIIlIIllI:AddDropdown("\083\116\097\116\083\101\108\101\099\116\111\114", { Title = "\083\101\108\101\099\105\111\110\101\032\111\032\065\116\114\105\098\117\116\111", Description = "\069\115\099\111\108\104\097\032\113\117\097\108\032\115\116\097\116\032\100\101\115\101\106\097\032\101\118\111\108\117\105\114", Values = StatsList, Multi = false, Default = "\069\110\101\114\103\121", Callback = function (Value) State.SelectedStat = Value end
+ }) _lIIIlIIllI:AddToggle("\065\117\116\111\085\112\103\114\097\100\101\083\116\097\116\084\111\103\103\108\101", { Title = "\065\116\105\118\097\114\032\065\117\116\111\032\085\112\103\114\097\100\101\032\083\116\097\116", Description = "\069\118\111\108\117\105\032\111\032\097\116\114\105\098\117\116\111\032\115\101\108\101\099\105\111\110\097\100\111\032\097\117\116\111\109\097\116\105\099\097\109\101\110\116\101", Default = false, Callback = function (Value) State.AutoUpgradeStat = Value end
+ }) task.spawn( function () while true do task.wait(0.1) if State.AutoUpgradeStat and State.SelectedStat then pcall( function () SignalRemote:FireServer("\071\101\110\101\114\097\108", "\076\101\118\101\108\085\112\103\114\097\100\101\115", "\085\112\103\114\097\100\101", State.SelectedStat, 0x1) end
+ ) end
+ end
+ end
+ ) task.spawn( function () while true do task.wait(0.01) if State.AutoAttackTurbo then pcall( function () SignalRemote:FireServer("\071\101\110\101\114\097\108", "\065\116\116\097\099\107", "\067\108\105\099\107", {}) end
+ ) end
+ end
+ end
+ ) task.spawn( function () while true do task.wait(0.5) if State.AutoRankUp then pcall( function () SignalRemote:FireServer("\071\101\110\101\114\097\108", "\082\097\110\107\085\112", "\085\112\103\114\097\100\101") end
+ ) end
+ end
+ end
+ ) local _IIIllIIlIl = Tabs.Player:AddSection("\069\120\116\114\097\032\070\117\110\099\116\105\111\110\115") _IIIllIIlIl:AddToggle("\065\117\116\111\067\108\097\105\109\084\105\109\101\082\101\119\097\114\100\115\084\111\103\103\108\101", { Title = "\065\117\116\111\032\067\108\097\105\109\032\084\105\109\101\032\082\101\119\097\114\100\115", Description = "\067\111\108\101\116\097\032\097\117\116\111\109\097\116\105\099\097\109\101\110\116\101\032\116\111\100\097\115\032\097\115\032\114\101\099\111\109\112\101\110\115\097\115\032\112\111\114\032\116\101\109\112\111", Default = false, Callback = function (Value) State.AutoClaimTimeRewards = Value end
+ }) _IIIllIIlIl:AddDropdown("\067\114\097\102\116\073\115\108\097\110\100\083\101\108\101\099\116\111\114", { Title = "\083\101\108\101\099\105\111\110\101\032\097\032\073\108\104\097\032\100\111\032\067\114\097\102\116", Description = "\069\115\099\111\108\104\097\032\112\097\114\097\032\113\117\097\108\032\105\108\104\097\032\100\101\115\101\106\097\032\102\097\098\114\105\099\097\114", Values = CraftIslandList, Multi = false, Default = "\078\105\110\106\097\032\073\115\108\097\110\100\032\040\087\049\041", Callback = function (Value) State.SelectedCraftIsland = Value end
+ }) _IIIllIIlIl:AddDropdown("\067\114\097\102\116\084\121\112\101\083\101\108\101\099\116\111\114", { Title = "\084\105\112\111\032\100\101\032\080\101\114\115\111\110\097\103\101\109", Description = "\069\115\099\111\108\104\097\032\101\110\116\114\101\032\078\111\114\109\097\108\032\040\070\097\108\115\101\041\032\111\117\032\083\104\105\110\121\032\040\084\114\117\101\041", Values = {"\078\111\114\109\097\108\032\040\070\097\108\115\101\041", "\083\104\105\110\121\032\040\084\114\117\101\041"}, Multi = false, Default = "\078\111\114\109\097\108\032\040\070\097\108\115\101\041", Callback = function (Value) State.CraftShinyVersion = (Value == "\083\104\105\110\121\032\040\084\114\117\101\041") end
+ }) _IIIllIIlIl:AddToggle("\065\117\116\111\067\114\097\102\116\084\111\103\103\108\101", { Title = "\065\117\116\111\032\067\114\097\102\116", Description = "\069\120\101\099\117\116\097\032\111\032\099\114\097\102\116\032\114\101\112\101\116\105\100\097\109\101\110\116\101", Default = false, Callback = function (Value) State.AutoCraft = Value end
+ }) _IIIllIIlIl:AddButton({ Title = "\082\101\100\101\101\109\032\065\108\108\032\067\111\100\101\115", Description = "\082\101\115\103\097\116\097\032\111\032\099\243\100\105\103\111\032\039\082\101\108\101\097\115\101\039", Callback = function () pcall( function () SignalRemote:FireServer("\071\101\110\101\114\097\108", "\067\111\100\101\115", "\067\108\097\105\109", "\082\101\108\101\097\115\101") end
+ ) end
+ }) task.spawn( function () while true do task.wait(0x1) if State.AutoClaimTimeRewards then for rewardIndex = 0x1, 0x7 do pcall( function () SignalRemote:FireServer("\071\101\110\101\114\097\108", "\084\105\109\101\082\101\119\097\114\100\115", "\067\108\097\105\109", rewardIndex) end
+ ) task.wait(0.1) end
+ end
+ end
+ end
+ ) task.spawn( function () while true do task.wait(0.2) if State.AutoCraft and State.SelectedCraftIsland then pcall( function () SignalRemote:FireServer("\071\101\110\101\114\097\108", "\067\114\097\102\116", "\067\114\097\102\116", GetCleanFolder(State.SelectedCraftIsland), State.CraftShinyVersion) end
+ ) end
+ end
+ end
+ ) local _lllllIlIII = Tabs.Gachas:AddSection("\065\117\116\111\032\079\112\101\110\032\083\116\097\114\115") _lllllIlIII:AddDropdown("\083\116\097\114\083\101\108\101\099\116\111\114", { Title = "\083\101\108\101\099\105\111\110\101\032\097\032\083\116\097\114", Values = StarList, Multi = false, Default = "\078\105\110\106\097\032\073\115\108\097\110\100\032\040\087\049\041", Callback = function (Value) State.SelectedStar = Value end
+ }) _lllllIlIII:AddToggle("\065\117\116\111\083\116\097\114\084\111\103\103\108\101", { Title = "\065\116\105\118\097\114\032\065\117\116\111\032\079\112\101\110\032\083\116\097\114", Default = false, Callback = function (Value) State.AutoOpenStar = Value end
+ }) task.spawn( function () while true do task.wait(0.01) if State.AutoOpenStar and State.SelectedStar then pcall( function () SignalRemote:FireServer("\071\101\110\101\114\097\108", "\083\116\097\114\115", "\077\117\108\116\105", GetCleanFolder(State.SelectedStar)) end
+ ) end
+ end
+ end
+ ) local _llIIlIlIIl = Tabs.Gachas:AddSection("\071\097\099\104\097\115\032\079\112\101\110") _llIIlIlIIl:AddDropdown("\071\097\099\104\097\083\101\108\101\099\116\111\114", { Title = "\083\101\108\101\099\105\111\110\101\032\111\032\071\097\099\104\097", Values = GachaList, Multi = false, Default = "\067\108\097\110\115\032\071\097\099\104\097\032\040\087\049\041", Callback = function (Value) State.SelectedGacha = Value end
+ }) _llIIlIlIIl:AddToggle("\065\117\116\111\071\097\099\104\097\084\111\103\103\108\101", { Title = "\065\116\105\118\097\114\032\065\117\116\111\032\082\111\108\108\032\071\097\099\104\097", Default = false, Callback = function (Value) State.AutoOpenGacha = Value end
+ }) task.spawn( function () while true do task.wait(0.01) if State.AutoOpenGacha and State.SelectedGacha then pcall( function () local _lIIlIIllll = GetCleanFolder(State.SelectedGacha):gsub("\037\115\042\071\097\099\104\097", "") SignalRemote:FireServer("\071\101\110\101\114\097\108", "\071\097\099\104\097", "\082\111\108\108", _lIIlIIllll, {}) end
+ ) end
+ end
+ end
+ ) local function _llllllllIl() local _IIIIIIIIll = LocalPlayer.Character local _llIlllllII = _IIIIIIIIll and _IIIIIIIIll:FindFirstChild("\072\117\109\097\110\111\105\100\082\111\111\116\080\097\114\116") if not _llIlllllII then return State.SelectedWorldMobFolder end
+ local _IIIIlIlllI = State.SelectedWorldMobFolder local _lIIlIIIIll = math.huge for _, rawFolder in ipairs(WorldFoldersList) do local _lIlIIlIIIl = GetCleanFolder(rawFolder) local _llIIIlIIll = WorldEnemies:FindFirstChild(_lIlIIlIIIl) if _llIIIlIIll then for _, mob in ipairs(_llIIIlIIll:GetChildren()) do local _lIIIlIllIl = GetMobRootPart(mob) if _lIIIlIllIl then local _lIIIIlIllI = (_lIIIlIllIl.Position - _llIlllllII.Position).Magnitude if _lIIIIlIllI < _lIIlIIIIll then _lIIlIIIIll = _lIIIIlIllI _IIIIlIlllI = rawFolder end
+ end
+ end
+ end
+ end
+ return _IIIIlIlllI end
+ local function _IIlllllIll() for _, _lIlIIlIIIl in pairs(GamemodeMobFolders) do local _llIIIlIIll = EnemiesFolder:FindFirstChild(_lIlIIlIIIl) if _llIIIlIIll then for _, mob in ipairs(_llIIIlIIll:GetChildren()) do local _lllIlIllII = mob:FindFirstChildOfClass("\072\117\109\097\110\111\105\100") if _lllIlIllII and _lllIlIllII.Health > 0x0 then return true end
+ end
+ end
+ end
+ return false end
+ local _llllIlllIl = Tabs.Gamemodes:AddSection("\071\097\109\101\109\111\100\101\032\038\032\083\116\097\116\117\115\032\073\110\102\111\114\109\097\116\105\111\110") local _IIIIlllIll = _llllIlllIl:AddParagraph({ Title = "\083\116\097\116\117\115\032\071\101\114\097\108\032\100\111\115\032\071\097\109\101\109\111\100\101\115", Content = "\067\097\114\114\101\103\097\110\100\111\032\105\110\102\111\114\109\097\231\245\101\115\046\046\046" }) task.spawn( function () while true do task.wait(0.5) pcall( function () local _llIIlllIlI = State.SavedIslandName or "\078\101\110\104\117\109\097" local _IIIllIlllI = "\078\047\065" if State.SavedCFrame then local _IIlllllIIl = State.SavedCFrame.Position _IIIllIlllI = string.format("\088\058\032\037\046\049\102\044\032\089\058\032\037\046\049\102\044\032\090\058\032\037\046\049\102", _IIlllllIIl.X, _IIlllllIIl.Y, _IIlllllIIl.Z) end
+ local _lIIllllIlI = _IIlllllIll() and "\069\109\032\080\097\114\116\105\100\097\032\040\065\116\105\118\111\041" or "\076\111\098\098\121\032\047\032\069\115\112\101\114\097\110\100\111" _IIIIlllIll:SetTitle("\083\116\097\116\117\115\032\100\111\032\074\111\103\097\100\111\114\032\047\032\071\097\109\101\109\111\100\101") _IIIIlllIll:SetDesc( "\8226\032\069\115\116\097\100\111\032\065\116\117\097\108\058\032" .. _lIIllllIlI .. "\092\110" .. "\8226\032\073\108\104\097\032\083\097\108\118\097\058\032" .. _llIIlllIlI .. "\092\110" .. "\8226\032\067\111\111\114\100\101\110\097\100\097\115\032\083\097\108\118\097\115\058\032" .. _IIIllIlllI .. "\092\110" .. "\8226\032\084\097\114\103\101\116\032\087\097\118\101\032\040\084\114\105\097\108\041\058\032" .. tostring(State.TargetWaveTrialEasy) .. "\092\110" .. "\8226\032\084\097\114\103\101\116\032\087\097\118\101\032\040\067\097\115\116\108\101\041\058\032" .. tostring(State.TargetWaveInfiniteCastle) .. "\092\110" .. "\8226\032\084\097\114\103\101\116\032\087\097\118\101\032\040\078\097\109\101\107\041\058\032" .. tostring(State.TargetWaveNamekInvasion) ) end
+ ) end
+ end
+ ) _llllIlllIl:AddButton({ Title = "\083\097\108\118\097\114\032\080\111\115\105\231\227\111\032\065\116\117\097\108", Description = "\083\097\108\118\097\032\097\032\108\111\099\097\108\105\122\097\231\227\111\032\097\116\117\097\108\032\112\097\114\097\032\114\101\116\111\114\110\111\032\097\117\116\111\109\225\116\105\099\111", Callback = function () local _IllIllIllI = LocalPlayer.Character local _llIlllllII = _IllIllIllI and _IllIllIllI:FindFirstChild("\072\117\109\097\110\111\105\100\082\111\111\116\080\097\114\116") if _llIlllllII then State.SavedCFrame = _llIlllllII.CFrame State.SavedIslandName = _llllllllIl() Fluent:Notify({ Title = "\080\111\115\105\231\227\111\032\083\097\108\118\097", Content = "\076\111\099\097\108\105\122\097\231\227\111\032\103\114\097\118\097\100\097\032\110\097\032\105\108\104\097\058\032" .. State.SavedIslandName, Duration = 0x3 }) end
+ end
+ }) _llllIlllIl:AddToggle("\085\115\101\083\097\118\101\100\080\111\115\084\111\103\103\108\101", { Title = "\082\101\116\111\114\110\097\114\032\080\097\114\097\032\080\111\115\105\231\227\111\032\083\097\108\118\097", Default = false, Callback = function (Value) State.UseSavedPosition = Value end
+ }) local _lIIllIllll = Tabs.Gamemodes:AddSection("\067\111\110\102\105\103\117\114\097\231\245\101\115\032\100\111\032\071\097\109\101\109\111\100\101") _lIIllIllll:AddDropdown("\071\097\109\101\109\111\100\101\083\101\108\101\099\116\111\114", { Title = "\083\101\108\101\099\105\111\110\101\032\111\032\077\111\100\111\032\100\101\032\074\111\103\111", Values = GamemodeList, Multi = false, Default = "\084\114\105\097\108\032\069\097\115\121\032\040\076\111\098\098\121\041", Callback = function (Value) State.SelectedGamemode = GetCleanFolder(Value) end
+ }) _lIIllIllll:AddToggle("\065\117\116\111\074\111\105\110\071\097\109\101\109\111\100\101\084\111\103\103\108\101", { Title = "\065\117\116\111\032\074\111\105\110\032\071\097\109\101\109\111\100\101", Default = false, Callback = function (Value) State.AutoJoinGamemode = Value end
+ }) _lIIllIllll:AddToggle("\065\117\116\111\070\097\114\109\071\097\109\101\109\111\100\101\084\111\103\103\108\101", { Title = "\065\117\116\111\032\070\097\114\109\032\071\097\109\101\109\111\100\101", Default = false, Callback = function (Value) State.AutoFarmGamemode = Value end
+ }) _lIIllIllll:AddToggle("\065\117\116\111\076\101\097\118\101\087\097\118\101\084\111\103\103\108\101", { Title = "\065\117\116\111\032\076\101\097\118\101\032\110\111\032\076\105\109\105\116\101\032\100\101\032\087\097\118\101", Default = false, Callback = function (Value) State.AutoLeaveWave = Value end
+ }) local _IIlIllllIl = Tabs.Gamemodes:AddSection("\067\111\110\102\105\103\117\114\097\231\227\111\032\100\101\032\087\097\118\101\115\032\040\076\105\109\105\116\101\115\041") _IIlIllllIl:AddInput("\084\097\114\103\101\116\087\097\118\101\084\114\105\097\108\073\110\112\117\116", { Title = "\087\097\118\101\032\076\105\109\105\116\101\032\045\032\084\114\105\097\108\032\069\097\115\121", Default = "\049\048", Placeholder = "\068\105\103\105\116\101\032\097\032\119\097\118\101\032\108\105\109\105\116\101\046\046\046", Numeric = true, Finished = true, Callback = function (Value) local _IIIIIlllIl = tonumber(Value) if _IIIIIlllIl then State.TargetWaveTrialEasy = _IIIIIlllIl end
+ end
+ }) _IIlIllllIl:AddInput("\084\097\114\103\101\116\087\097\118\101\067\097\115\116\108\101\073\110\112\117\116", { Title = "\087\097\118\101\032\076\105\109\105\116\101\032\045\032\073\110\102\105\110\105\116\101\032\067\097\115\116\108\101", Default = "\053\048", Placeholder = "\068\105\103\105\116\101\032\097\032\119\097\118\101\032\108\105\109\105\116\101\046\046\046", Numeric = true, Finished = true, Callback = function (Value) local _IIIIIlllIl = tonumber(Value) if _IIIIIlllIl then State.TargetWaveInfiniteCastle = _IIIIIlllIl end
+ end
+ }) _IIlIllllIl:AddInput("\084\097\114\103\101\116\087\097\118\101\078\097\109\101\107\073\110\112\117\116", { Title = "\087\097\118\101\032\076\105\109\105\116\101\032\045\032\078\097\109\101\107\032\073\110\118\097\115\105\111\110", Default = "\049\053", Placeholder = "\068\105\103\105\116\101\032\097\032\119\097\118\101\032\108\105\109\105\116\101\046\046\046", Numeric = true, Finished = true, Callback = function (Value) local _IIIIIlllIl = tonumber(Value) if _IIIIIlllIl then State.TargetWaveNamekInvasion = _IIIIIlllIl end
+ end
+ }) local function _llllIIllll() local _lIlIIlIIIl = GamemodeMobFolders[State.SelectedGamemode] if not _lIlIIlIIIl then return nil end
+ local _lIIlIlllll = EnemiesFolder:FindFirstChild(_lIlIIlIIIl) if not _lIIlIlllll then return nil end
+ local _IIIIIIIIll = LocalPlayer.Character local _llIlllllII = _IIIIIIIIll and _IIIIIIIIll:FindFirstChild("\072\117\109\097\110\111\105\100\082\111\111\116\080\097\114\116") if not _llIlllllII then return nil end
+ local _lIIIIllIIl = nil local _lIIlIIIIll = math.huge for _, mob in ipairs(_lIIlIlllll:GetChildren()) do if IsMobSpawnedAndAlive(mob) then local _lIIIlIllIl = GetMobRootPart(mob) if _lIIIlIllIl then local _lIIIIlIllI = (_lIIIlIllIl.Position - _llIlllllII.Position).Magnitude if _lIIIIlIllI < _lIIlIIIIll then _lIIlIIIIll = _lIIIIlIllI _lIIIIllIIl = mob end
+ end
+ end
+ end
+ return _lIIIIllIIl end
+ task.spawn( function () while true do task.wait(0.05) if State.AutoFarmGamemode then pcall( function () local _IlIIlIIIII = _llllIIllll() if _IlIIlIIIII and IsMobSpawnedAndAlive(_IlIIlIIIII) then local _IIIIIIIIll = LocalPlayer.Character local _llIlllllII = _IIIIIIIIll and _IIIIIIIIll:FindFirstChild("\072\117\109\097\110\111\105\100\082\111\111\116\080\097\114\116") local _lIIIlIllIl = GetMobRootPart(_IlIIlIIIII) if _llIlllllII and _lIIIlIllIl then _llIlllllII.AssemblyLinearVelocity = Vector3.zero _llIlllllII.AssemblyAngularVelocity = Vector3.zero _llIlllllII.CFrame = CFrame.new(_lIIIlIllIl.Position + Vector3.new(0x0, 1.5, 0x2)) end
+ end
+ end
+ ) end
+ end
+ end
+ ) task.spawn( function () while true do task.wait(0x1) if State.AutoJoinGamemode and not _IIlllllIll() then pcall( function () SignalRemote:FireServer("\071\101\110\101\114\097\108", "\071\097\109\101\109\111\100\101\115", "\074\111\105\110", State.SelectedGamemode) end
+ ) end
+ end
+ end
+ ) task.spawn( function () while true do task.wait(0x1) if State.AutoLeaveWave and _IIlllllIll() then pcall( function () local _IlIIllIIII = 0x0 local _lllIIlIlll = workspace:FindFirstChild("\067\117\114\114\101\110\116\087\097\118\101") or ReplicatedStorage:FindFirstChild("\067\117\114\114\101\110\116\087\097\118\101") if _lllIIlIlll then _IlIIllIIII = _lllIIlIlll.Value end
+ local _lllIlIlllI = 0xA if State.SelectedGamemode == "\084\114\105\097\108\032\069\097\115\121" then _lllIlIlllI = State.TargetWaveTrialEasy elseif State.SelectedGamemode == "\073\110\102\105\110\105\116\101\032\067\097\115\116\108\101" then _lllIlIlllI = State.TargetWaveInfiniteCastle elseif State.SelectedGamemode == "\078\097\109\101\107\032\073\110\118\097\115\105\111\110" then _lllIlIlllI = State.TargetWaveNamekInvasion end
+ if _IlIIllIIII >= _lllIlIlllI then SignalRemote:FireServer("\071\101\110\101\114\097\108", "\071\097\109\101\109\111\100\101\115", "\076\101\097\118\101") if State.UseSavedPosition and State.SavedCFrame then task.wait(0x1) local _IllIllIllI = LocalPlayer.Character local _llIlllllII = _IllIllIllI and _IllIllIllI:FindFirstChild("\072\117\109\097\110\111\105\100\082\111\111\116\080\097\114\116") if _llIlllllII then _llIlllllII.CFrame = State.SavedCFrame end
+ end
+ end
+ end
+ ) end
+ end
+ end
+ ) SaveManager:SetLibrary(Fluent) InterfaceManager:SetLibrary(Fluent) SaveManager:IgnoreThemeSettings() SaveManager:SetIgnoreIndexes({}) InterfaceManager:SetFolder("\084\104\101\067\114\111\119\110\073\110\099\083\099\114\105\112\116") SaveManager:SetFolder("\084\104\101\067\114\111\119\110\073\110\099\083\099\114\105\112\116\047\099\111\110\102\105\103\115") InterfaceManager:BuildInterfaceSection(Tabs.Settings) SaveManager:BuildConfigSection(Tabs.Settings) Window:SelectTab(0x1) Fluent:Notify({ Title = "\084\104\101\032\067\114\111\119\110\032\073\110\099", Content = "\083\099\114\105\112\116\032\099\097\114\114\101\103\097\100\111\032\099\111\109\032\115\117\099\101\115\115\111\033", Duration = 0x5 }) SaveManager:LoadAutoloadConfig() end
+ )(...)
