@@ -1,27 +1,32 @@
 -- ====================================================================
---                      1. IMPORTAÇÃO DE MÓDULOS (Fluent)
+--                  1. CARREGAMENTO SEGURO DA INTERFACE
 -- ====================================================================
-local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+local Success, Fluent = pcall(function()
+    return loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+end)
+
+if not Success or not Fluent then
+    warn("[The Crown Inc] Falha ao carregar a Fluent UI Library.")
+    return
+end
+
 local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
 local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
 
 -- ====================================================================
---                      2. SERVIÇOS, PLAYERS & REMOTES
+--                  2. SERVIÇOS, PLAYERS & VARIÁVEIS
 -- ====================================================================
 local Players            = game:GetService("Players")
 local ReplicatedStorage  = game:GetService("ReplicatedStorage")
 local MarketplaceService = game:GetService("MarketplaceService")
 local LocalPlayer        = Players.LocalPlayer
 
-local Remotes            = ReplicatedStorage:WaitForChild("Remotes")
-local SignalRemote       = Remotes:WaitForChild("Signal")
-local ClientFolder       = workspace:WaitForChild("Client")
-local EnemiesFolder      = ClientFolder:WaitForChild("Enemies")
-local WorldEnemies       = EnemiesFolder:WaitForChild("World")
+local Remotes            = ReplicatedStorage:WaitForChild("Remotes", 10)
+local SignalRemote       = Remotes and Remotes:WaitForChild("Signal", 10)
+local ClientFolder       = workspace:WaitForChild("Client", 10)
+local EnemiesFolder      = ClientFolder and ClientFolder:WaitForChild("Enemies", 10)
+local WorldEnemies       = EnemiesFolder and EnemiesFolder:WaitForChild("World", 10)
 
--- ====================================================================
---                      3. ESTADO GLOBAL / VARIÁVEIS
--- ====================================================================
 local gameName = "Anime Sword"
 pcall(function()
     gameName = MarketplaceService:GetProductInfo(game.PlaceId).Name
@@ -61,30 +66,30 @@ local State = {
     TargetWaveNamekInvasion = 15
 }
 
-local StatsList = { "Energy", "Coins", "Damage", "Luck", "Exp" }
-local CraftIslandList = { "Ninja Island (W1)", "Pirate Island (W2)", "Slayer Island (W3)", "Namek Island (W4)" }
-local WorldFoldersList = { "Ninja Island (W1)", "Pirate Island (W2)", "Slayer Island (W3)", "Namek Island (W4)" }
+local StatsList          = { "Energy", "Coins", "Damage", "Luck", "Exp" }
+local CraftIslandList    = { "Ninja Island (W1)", "Pirate Island (W2)", "Slayer Island (W3)", "Namek Island (W4)" }
+local WorldFoldersList   = { "Ninja Island (W1)", "Pirate Island (W2)", "Slayer Island (W3)", "Namek Island (W4)" }
+local StarList           = { "Ninja Island (W1)", "Pirate Island (W2)", "Slayer Island (W3)", "Namek Island (W4)" }
+local GamemodeList       = { "Trial Easy (Lobby)", "Infinite Castle (W3)", "Namek Invasion (W4)" }
+local GachaList          = {
+    "Clans Gacha (W1)", "First Shinobi (W1)", "Fruits Gacha (W2)",
+    "Haki Gacha (W2)", "Breaths Gacha (W3)", "Demon Arts (W3)",
+    "Player Passive (W4)", "Dragon Techniques (W4)", "Races Gacha (W4)"
+}
 local GamemodeMobFolders = {
     ["Trial Easy"]      = "TrialEasy",
     ["Infinite Castle"] = "InfiniteCastle",
     ["Namek Invasion"]  = "Namek Invasion"
 }
-local StarList = { "Ninja Island (W1)", "Pirate Island (W2)", "Slayer Island (W3)", "Namek Island (W4)" }
-local GachaList = {
-    "Clans Gacha (W1)", "First Shinobi (W1)", "Fruits Gacha (W2)",
-    "Haki Gacha (W2)", "Breaths Gacha (W3)", "Demon Arts (W3)",
-    "Player Passive (W4)", "Dragon Techniques (W4)", "Races Gacha (W4)"
-}
-local GamemodeList = { "Trial Easy (Lobby)", "Infinite Castle (W3)", "Namek Invasion (W4)" }
 
 -- ====================================================================
---                      4. INTERFACE GRÁFICA (Fluent UI)
+--                  3. CRIAÇÃO DA JANELA UI
 -- ====================================================================
 local Window = Fluent:CreateWindow({
     Title       = "The Crown Inc",
     SubTitle    = gameName,
     TabWidth    = 140,
-    Size        = UDim2.fromOffset(500, 380),
+    Size        = UDim2.fromOffset(530, 390),
     Acrylic     = true,
     Theme       = "Dark",
     MinimizeKey = Enum.KeyCode.RightControl
@@ -99,9 +104,10 @@ local Tabs = {
 }
 
 -- ====================================================================
---                  [FUNÇÕES AUXILIARES DE LEITURA]
+--                  4. FUNÇÕES AUXILIARES DE CHECAGEM
 -- ====================================================================
 local function GetCleanFolder(name)
+    if not name then return "" end
     return name:gsub("%s*%([%w%s]+%)", "")
 end
 
@@ -133,14 +139,16 @@ local function IsMobSpawnedAndAlive(mobModel)
 end
 
 -- ====================================================================
---                  [ABA 1: AUTO FARM - WORLD MOBS]
+--                  5. CONTROLES DA UI E LÓGICA
 -- ====================================================================
+
+-- ABA 1: AUTO FARM
 local WorldFarmSection = Tabs.AutoFarm:AddSection("World Enemies Auto Farm")
 
-local EnemyDropdown
-local PriorityDropdown
+local EnemyDropdown, PriorityDropdown
 
 local function RefreshEnemyList()
+    if not WorldEnemies then return end
     local FolderName = GetCleanFolder(State.SelectedWorldMobFolder)
     local CurrentFolder = WorldEnemies:FindFirstChild(FolderName)
     local UniqueAssemblies = {}
@@ -163,9 +171,7 @@ local function RefreshEnemyList()
         State.SelectedMobName = nil
     else
         State.SelectedMobName = FilteredList[1]
-        for _, name in ipairs(FilteredList) do
-            table.insert(PriorityList, name)
-        end
+        for _, name in ipairs(FilteredList) do table.insert(PriorityList, name) end
     end
 
     if EnemyDropdown then
@@ -182,9 +188,7 @@ end
 
 WorldFarmSection:AddDropdown("WorldFolderSelector", {
     Title       = "Selecione a Pasta do World",
-    Description = "Escolha de qual ilha deseja buscar os mobs",
     Values      = WorldFoldersList,
-    Multi       = false,
     Default     = "Pirate Island (W2)",
     Callback    = function(Value)
         State.SelectedWorldMobFolder = Value
@@ -194,157 +198,42 @@ WorldFarmSection:AddDropdown("WorldFolderSelector", {
 
 EnemyDropdown = WorldFarmSection:AddDropdown("EnemySelector", {
     Title       = "Selecione o Inimigo Principal",
-    Description = "Mob alvo base para auto farm",
     Values      = {"Nenhum Mob Encontrado"},
-    Multi       = false,
     Default     = nil,
     Callback    = function(Value)
-        if Value and Value ~= "Nenhum Mob Encontrado" then
-            State.SelectedMobName = Value
-        end
+        if Value and Value ~= "Nenhum Mob Encontrado" then State.SelectedMobName = Value end
     end
 })
 
 PriorityDropdown = WorldFarmSection:AddDropdown("PriorityEnemySelector", {
     Title       = "Selecione o Mob Prioritário",
-    Description = "Se este mob estiver vivo na área, o farm focará nele antes dos outros",
     Values      = {"Nenhum"},
-    Multi       = false,
     Default     = "Nenhum",
-    Callback    = function(Value)
-        State.PriorityMobName = Value or "Nenhum"
-    end
+    Callback    = function(Value) State.PriorityMobName = Value or "Nenhum" end
 })
 
 WorldFarmSection:AddButton({
     Title       = "Refresh Mobs",
-    Description = "Atualiza a lista de inimigos da ilha selecionada",
     Callback    = function() RefreshEnemyList() end
 })
 
 WorldFarmSection:AddToggle("AutoWorldFarmToggle", {
-    Title       = "Ativar Auto Farm World",
-    Description = "Teleporta e troca de mob a cada 1.0s para eliminar alvos",
+    Title       = "Ativar Auto Farm World (Troca 1.0s)",
     Default     = false,
     Callback    = function(Value) State.AutoFarmWorldMobs = Value end
 })
 
--- ====================================================================
---        [SISTEMA DE FARM COM PRIORIDADE & ROTAÇÃO DE 1 SEGUNDO]
--- ====================================================================
-local CurrentTargetIndex = 1
-local LastTargetMob = nil
-local TargetTimeCounter = 0
-
-local function GetValidMobs()
-    local folderName = GetCleanFolder(State.SelectedWorldMobFolder)
-    local targetFolder = WorldEnemies:FindFirstChild(folderName)
-    local list = {}
-
-    if not targetFolder then return list end
-
-    -- 1. Tenta buscar primeiro os mobs de PRIORIDADE se houver algum selecionado
-    if State.PriorityMobName and State.PriorityMobName ~= "Nenhum" then
-        local priorityAssemblyLower = State.PriorityMobName:lower()
-        for _, mob in ipairs(targetFolder:GetChildren()) do
-            if IsMobSpawnedAndAlive(mob) then
-                local mobAssembly = GetMobAssembly(mob)
-                if mobAssembly and mobAssembly:lower() == priorityAssemblyLower then
-                    table.insert(list, mob)
-                end
-            end
-        end
-    end
-
-    -- 2. Se não encontrar nenhum mob prioritário vivo (ou prioridade = "Nenhum"), busca os normais
-    if #list == 0 and State.SelectedMobName then
-        local targetAssemblyLower = State.SelectedMobName:lower()
-        for _, mob in ipairs(targetFolder:GetChildren()) do
-            if IsMobSpawnedAndAlive(mob) then
-                local mobAssembly = GetMobAssembly(mob)
-                if mobAssembly and mobAssembly:lower() == targetAssemblyLower then
-                    table.insert(list, mob)
-                end
-            end
-        end
-    end
-
-    return list
-end
-
-task.spawn(function()
-    while true do
-        task.wait(0.05)
-        if State.AutoFarmWorldMobs then
-            pcall(function()
-                local mobs = GetValidMobs()
-
-                if #mobs > 0 then
-                    if CurrentTargetIndex > #mobs then
-                        CurrentTargetIndex = 1
-                    end
-
-                    local currentMob = mobs[CurrentTargetIndex]
-
-                    if currentMob and IsMobSpawnedAndAlive(currentMob) then
-                        local character = LocalPlayer.Character
-                        local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-                        local mobRoot = GetMobRootPart(currentMob)
-
-                        if rootPart and mobRoot then
-                            rootPart.AssemblyLinearVelocity = Vector3.zero
-                            rootPart.AssemblyAngularVelocity = Vector3.zero
-                            rootPart.CFrame = CFrame.new(mobRoot.Position + Vector3.new(0, 1.5, 2))
-                        end
-
-                        -- ROTAÇÃO DE 1.0 SEGUNDO: Mantém no mesmo mob até 1.0s para eliminar totalmente
-                        if currentMob == LastTargetMob then
-                            TargetTimeCounter = TargetTimeCounter + 0.05
-                            if TargetTimeCounter >= 1.0 then 
-                                CurrentTargetIndex = CurrentTargetIndex + 1
-                                TargetTimeCounter = 0
-                            end
-                        else
-                            LastTargetMob = currentMob
-                            TargetTimeCounter = 0
-                        end
-                    else
-                        CurrentTargetIndex = CurrentTargetIndex + 1
-                        TargetTimeCounter = 0
-                    end
-                else
-                    CurrentTargetIndex = 1
-                    LastTargetMob = nil
-                    TargetTimeCounter = 0
-                end
-            end)
-        else
-            CurrentTargetIndex = 1
-            LastTargetMob = nil
-            TargetTimeCounter = 0
-        end
-    end
-end)
-
-task.defer(function()
-    task.wait(1)
-    RefreshEnemyList()
-end)
--- ====================================================================
---                  [ABA 2: PLAYER FARM & STATS]
--- ====================================================================
+-- ABA 2: PLAYER FARM & STATS
 local PlayerSection = Tabs.Player:AddSection("Player Functions")
 
 PlayerSection:AddToggle("AutoAttackTurboToggle", {
     Title       = "Auto Attack Turbo",
-    Description = "Dispara o remote de ataque continuamente",
     Default     = false,
     Callback    = function(Value) State.AutoAttackTurbo = Value end
 })
 
 PlayerSection:AddToggle("AutoRankUpToggle", {
     Title       = "Auto Rank Up",
-    Description = "Realiza o upgrade de Rank automaticamente",
     Default     = false,
     Callback    = function(Value) State.AutoRankUp = Value end
 })
@@ -353,261 +242,90 @@ local StatsSection = Tabs.Player:AddSection("Stats Upgrades")
 
 StatsSection:AddDropdown("StatSelector", {
     Title       = "Selecione o Atributo",
-    Description = "Escolha qual stat deseja evoluir",
     Values      = StatsList,
-    Multi       = false,
     Default     = "Energy",
     Callback    = function(Value) State.SelectedStat = Value end
 })
 
 StatsSection:AddToggle("AutoUpgradeStatToggle", {
     Title       = "Ativar Auto Upgrade Stat",
-    Description = "Evolui o atributo selecionado automaticamente",
     Default     = false,
     Callback    = function(Value) State.AutoUpgradeStat = Value end
 })
-
-task.spawn(function()
-    while true do
-        task.wait(0.1)
-        if State.AutoUpgradeStat and State.SelectedStat then
-            pcall(function()
-                SignalRemote:FireServer("General", "LevelUpgrades", "Upgrade", State.SelectedStat, 1)
-            end)
-        end
-    end
-end)
-
-task.spawn(function()
-    while true do
-        task.wait(0.01)
-        if State.AutoAttackTurbo then
-            pcall(function() SignalRemote:FireServer("General", "Attack", "Click", {}) end)
-        end
-    end
-end)
-
-task.spawn(function()
-    while true do
-        task.wait(0.5)
-        if State.AutoRankUp then
-            pcall(function() SignalRemote:FireServer("General", "RankUp", "Upgrade") end)
-        end
-    end
-end)
 
 local ExtraSection = Tabs.Player:AddSection("Extra Functions")
 
 ExtraSection:AddToggle("AutoClaimTimeRewardsToggle", {
     Title       = "Auto Claim Time Rewards",
-    Description = "Coleta automaticamente todas as recompensas por tempo",
     Default     = false,
     Callback    = function(Value) State.AutoClaimTimeRewards = Value end
 })
 
 ExtraSection:AddDropdown("CraftIslandSelector", {
-    Title       = "Selecione a Ilha do Craft",
-    Description = "Escolha para qual ilha deseja fabricar",
+    Title       = "Ilha do Craft",
     Values      = CraftIslandList,
-    Multi       = false,
     Default     = "Ninja Island (W1)",
     Callback    = function(Value) State.SelectedCraftIsland = Value end
 })
 
 ExtraSection:AddDropdown("CraftTypeSelector", {
     Title       = "Tipo de Personagem",
-    Description = "Escolha entre Normal (False) ou Shiny (True)",
     Values      = {"Normal (False)", "Shiny (True)"},
-    Multi       = false,
     Default     = "Normal (False)",
     Callback    = function(Value) State.CraftShinyVersion = (Value == "Shiny (True)") end
 })
 
 ExtraSection:AddToggle("AutoCraftToggle", {
     Title       = "Auto Craft",
-    Description = "Executa o craft repetidamente",
     Default     = false,
     Callback    = function(Value) State.AutoCraft = Value end
 })
 
 ExtraSection:AddButton({
     Title       = "Redeem All Codes",
-    Description = "Resgata o código 'Release'",
     Callback    = function()
-        pcall(function() SignalRemote:FireServer("General", "Codes", "Claim", "Release") end)
+        if SignalRemote then SignalRemote:FireServer("General", "Codes", "Claim", "Release") end
     end
 })
 
-task.spawn(function()
-    while true do
-        task.wait(1)
-        if State.AutoClaimTimeRewards then
-            for rewardIndex = 1, 7 do
-                pcall(function() SignalRemote:FireServer("General", "TimeRewards", "Claim", rewardIndex) end)
-                task.wait(0.1)
-            end
-        end
-    end
-end)
-
-task.spawn(function()
-    while true do
-        task.wait(0.2)
-        if State.AutoCraft and State.SelectedCraftIsland then
-            pcall(function()
-                SignalRemote:FireServer("General", "Craft", "Craft", GetCleanFolder(State.SelectedCraftIsland), State.CraftShinyVersion)
-            end)
-        end
-    end
-end)
-
--- ====================================================================
---                  [ABA 3: GACHAS & SYSTEMS]
--- ====================================================================
+-- ABA 3: GACHAS & STARS
 local StarSection = Tabs.Gachas:AddSection("Auto Open Stars")
-
 StarSection:AddDropdown("StarSelector", {
     Title       = "Selecione a Star",
     Values      = StarList,
-    Multi       = false,
     Default     = "Ninja Island (W1)",
     Callback    = function(Value) State.SelectedStar = Value end
 })
-
 StarSection:AddToggle("AutoStarToggle", {
     Title       = "Ativar Auto Open Star",
     Default     = false,
     Callback    = function(Value) State.AutoOpenStar = Value end
 })
 
-task.spawn(function()
-    while true do
-        task.wait(0.01)
-        if State.AutoOpenStar and State.SelectedStar then
-            pcall(function()
-                SignalRemote:FireServer("General", "Stars", "Multi", GetCleanFolder(State.SelectedStar))
-            end)
-        end
-    end
-end)
-
 local GachaSection = Tabs.Gachas:AddSection("Gachas Open")
-
 GachaSection:AddDropdown("GachaSelector", {
     Title       = "Selecione o Gacha",
     Values      = GachaList,
-    Multi       = false,
     Default     = "Clans Gacha (W1)",
     Callback    = function(Value) State.SelectedGacha = Value end
 })
-
 GachaSection:AddToggle("AutoGachaToggle", {
     Title       = "Ativar Auto Roll Gacha",
     Default     = false,
     Callback    = function(Value) State.AutoOpenGacha = Value end
 })
 
-task.spawn(function()
-    while true do
-        task.wait(0.01)
-        if State.AutoOpenGacha and State.SelectedGacha then
-            pcall(function()
-                local cleanGacha = GetCleanFolder(State.SelectedGacha):gsub("%s*Gacha", "")
-                SignalRemote:FireServer("General", "Gacha", "Roll", cleanGacha, {})
-            end)
-        end
-    end
-end)
-
--- ====================================================================
---                  [ABA 4: GAMEMODES & SAVE POSITION]
--- ====================================================================
-local function GetCurrentIslandName()
-    local character = LocalPlayer.Character
-    local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-    if not rootPart then return State.SelectedWorldMobFolder end
-
-    local closestIsland = State.SelectedWorldMobFolder
-    local shortestDist = math.huge
-
-    for _, rawFolder in ipairs(WorldFoldersList) do
-        local folderName = GetCleanFolder(rawFolder)
-        local folder = WorldEnemies:FindFirstChild(folderName)
-        if folder then
-            for _, mob in ipairs(folder:GetChildren()) do
-                local mobRoot = GetMobRootPart(mob)
-                if mobRoot then
-                    local dist = (mobRoot.Position - rootPart.Position).Magnitude
-                    if dist < shortestDist then
-                        shortestDist = dist
-                        closestIsland = rawFolder
-                    end
-                end
-            end
-        end
-    end
-    return closestIsland
-end
-
-local function IsAnyGamemodeActive()
-    for _, folderName in pairs(GamemodeMobFolders) do
-        local folder = EnemiesFolder:FindFirstChild(folderName)
-        if folder then
-            for _, mob in ipairs(folder:GetChildren()) do
-                local hum = mob:FindFirstChildOfClass("Humanoid")
-                if hum and hum.Health > 0 then return true end
-            end
-        end
-    end
-    return false
-end
-
-local SavePosSection = Tabs.Gamemodes:AddSection("Gamemode & Status Information")
-
-local StatusParagraph = SavePosSection:AddParagraph({
-    Title   = "Status Geral dos Gamemodes",
-    Content = "Carregando informações..."
-})
-
-task.spawn(function()
-    while true do
-        task.wait(0.5)
-        pcall(function()
-            local islandText = State.SavedIslandName or "Nenhuma"
-            local cfText = "N/A"
-            if State.SavedCFrame then
-                local pos = State.SavedCFrame.Position
-                cfText = string.format("X: %.1f, Y: %.1f, Z: %.1f", pos.X, pos.Y, pos.Z)
-            end
-            local activeText = IsAnyGamemodeActive() and "Em Partida (Ativo)" or "Lobby / Esperando"
-
-            StatusParagraph:SetTitle("Status do Jogador / Gamemode")
-            StatusParagraph:SetDesc(
-                "• Estado Atual: " .. activeText .. "\n" ..
-                "• Ilha Salva: " .. islandText .. "\n" ..
-                "• Coordenadas Salvas: " .. cfText .. "\n" ..
-                "• Target Wave (Trial): " .. tostring(State.TargetWaveTrialEasy) .. "\n" ..
-                "• Target Wave (Castle): " .. tostring(State.TargetWaveInfiniteCastle) .. "\n" ..
-                "• Target Wave (Namek): " .. tostring(State.TargetWaveNamekInvasion)
-            )
-        end)
-    end
-end)
+-- ABA 4: GAMEMODES & CONFIGS DE WAVE
+local SavePosSection = Tabs.Gamemodes:AddSection("Informações & Posição")
 
 SavePosSection:AddButton({
     Title       = "Salvar Posição Atual",
-    Description = "Salva a localização atual para retorno automático",
     Callback    = function()
         local char = LocalPlayer.Character
         local rootPart = char and char:FindFirstChild("HumanoidRootPart")
         if rootPart then
             State.SavedCFrame = rootPart.CFrame
-            State.SavedIslandName = GetCurrentIslandName()
-            Fluent:Notify({
-                Title   = "Posição Salva",
-                Content = "Localização gravada na ilha: " .. State.SavedIslandName,
-                Duration = 3
-            })
+            Fluent:Notify({ Title = "Sucesso", Content = "Posição salva!", Duration = 3 })
         end
     end
 })
@@ -618,16 +336,13 @@ SavePosSection:AddToggle("UseSavedPosToggle", {
     Callback    = function(Value) State.UseSavedPosition = Value end
 })
 
-local GamemodeConfigSection = Tabs.Gamemodes:AddSection("Configurações do Gamemode")
+local GamemodeConfigSection = Tabs.Gamemodes:AddSection("Controle Gamemode")
 
 GamemodeConfigSection:AddDropdown("GamemodeSelector", {
-    Title       = "Selecione o Modo de Jogo",
+    Title       = "Selecione o Modo",
     Values      = GamemodeList,
-    Multi       = false,
     Default     = "Trial Easy (Lobby)",
-    Callback    = function(Value)
-        State.SelectedGamemode = GetCleanFolder(Value)
-    end
+    Callback    = function(Value) State.SelectedGamemode = GetCleanFolder(Value) end
 })
 
 GamemodeConfigSection:AddToggle("AutoJoinGamemodeToggle", {
@@ -648,160 +363,325 @@ GamemodeConfigSection:AddToggle("AutoLeaveWaveToggle", {
     Callback    = function(Value) State.AutoLeaveWave = Value end
 })
 
--- SECTION SEPARADA EXCLUSIVAMENTE PARA INPUTS DAS WAVES
-local WaveInputsSection = Tabs.Gamemodes:AddSection("Configuração de Waves (Limites)")
+local WaveInputsSection = Tabs.Gamemodes:AddSection("Limites de Wave")
 
 WaveInputsSection:AddInput("TargetWaveTrialInput", {
     Title       = "Wave Limite - Trial Easy",
     Default     = "10",
-    Placeholder = "Digite a wave limite...",
     Numeric     = true,
     Finished    = true,
-    Callback    = function(Value)
-        local num = tonumber(Value)
-        if num then State.TargetWaveTrialEasy = num end
-    end
+    Callback    = function(v) State.TargetWaveTrialEasy = tonumber(v) or 10 end
 })
 
 WaveInputsSection:AddInput("TargetWaveCastleInput", {
     Title       = "Wave Limite - Infinite Castle",
     Default     = "50",
-    Placeholder = "Digite a wave limite...",
     Numeric     = true,
     Finished    = true,
-    Callback    = function(Value)
-        local num = tonumber(Value)
-        if num then State.TargetWaveInfiniteCastle = num end
-    end
+    Callback    = function(v) State.TargetWaveInfiniteCastle = tonumber(v) or 50 end
 })
 
 WaveInputsSection:AddInput("TargetWaveNamekInput", {
     Title       = "Wave Limite - Namek Invasion",
     Default     = "15",
-    Placeholder = "Digite a wave limite...",
     Numeric     = true,
     Finished    = true,
-    Callback    = function(Value)
-        local num = tonumber(Value)
-        if num then State.TargetWaveNamekInvasion = num end
-    end
+    Callback    = function(v) State.TargetWaveNamekInvasion = tonumber(v) or 15 end
 })
 
-local function GetTargetGamemodeMob()
-    local folderName = GamemodeMobFolders[State.SelectedGamemode]
-    if not folderName then return nil end
+-- ====================================================================
+--                  6. LOOPS DE EXECUÇÃO
+-- ====================================================================
 
-    local targetFolder = EnemiesFolder:FindFirstChild(folderName)
-    if not targetFolder then return nil end
+-- FARM WORLD ENEMIES ( prioritário + 1.0s rotação )
+local CurrentTargetIndex, LastTargetMob, TargetTimeCounter = 1, nil, 0
 
-    local character = LocalPlayer.Character
-    local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-    if not rootPart then return nil end
+local function GetValidMobs()
+    if not WorldEnemies then return {} end
+    local folderName = GetCleanFolder(State.SelectedWorldMobFolder)
+    local targetFolder = WorldEnemies:FindFirstChild(folderName)
+    local list = {}
 
-    local closestMob = nil
-    local shortestDist = math.huge
+    if not targetFolder then return list end
 
-    for _, mob in ipairs(targetFolder:GetChildren()) do
-        if IsMobSpawnedAndAlive(mob) then
-            local mobRoot = GetMobRootPart(mob)
-            if mobRoot then
-                local dist = (mobRoot.Position - rootPart.Position).Magnitude
-                if dist < shortestDist then
-                    shortestDist = dist
-                    closestMob = mob
+    if State.PriorityMobName and State.PriorityMobName ~= "Nenhum" then
+        local priorityLower = State.PriorityMobName:lower()
+        for _, mob in ipairs(targetFolder:GetChildren()) do
+            if IsMobSpawnedAndAlive(mob) then
+                local assembly = GetMobAssembly(mob)
+                if assembly and assembly:lower() == priorityLower then
+                    table.insert(list, mob)
                 end
             end
         end
     end
-    return closestMob
+
+    if #list == 0 and State.SelectedMobName then
+        local targetLower = State.SelectedMobName:lower()
+        for _, mob in ipairs(targetFolder:GetChildren()) do
+            if IsMobSpawnedAndAlive(mob) then
+                local assembly = GetMobAssembly(mob)
+                if assembly and assembly:lower() == targetLower then
+                    table.insert(list, mob)
+                end
+            end
+        end
+    end
+
+    return list
 end
 
 task.spawn(function()
     while true do
         task.wait(0.05)
-        if State.AutoFarmGamemode then
+        if State.AutoFarmWorldMobs then
             pcall(function()
-                local targetMob = GetTargetGamemodeMob()
-                if targetMob and IsMobSpawnedAndAlive(targetMob) then
-                    local character = LocalPlayer.Character
-                    local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-                    local mobRoot = GetMobRootPart(targetMob)
+                local mobs = GetValidMobs()
+                if #mobs > 0 then
+                    if CurrentTargetIndex > #mobs then CurrentTargetIndex = 1 end
+                    local currentMob = mobs[CurrentTargetIndex]
 
-                    if rootPart and mobRoot then
-                        rootPart.AssemblyLinearVelocity = Vector3.zero
-                        rootPart.AssemblyAngularVelocity = Vector3.zero
-                        rootPart.CFrame = CFrame.new(mobRoot.Position + Vector3.new(0, 1.5, 2))
-                    end
-                end
-            end)
-        end
-    end
-end)
-
-task.spawn(function()
-    while true do
-        task.wait(1)
-        if State.AutoJoinGamemode and not IsAnyGamemodeActive() then
-            pcall(function()
-                SignalRemote:FireServer("General", "Gamemodes", "Join", State.SelectedGamemode)
-            end)
-        end
-    end
-end)
-
-task.spawn(function()
-    while true do
-        task.wait(1)
-        if State.AutoLeaveWave and IsAnyGamemodeActive() then
-            pcall(function()
-                local currentWave = 0
-                local waveValue = workspace:FindFirstChild("CurrentWave") or ReplicatedStorage:FindFirstChild("CurrentWave")
-                if waveValue then currentWave = waveValue.Value end
-
-                local targetWave = 10
-                if State.SelectedGamemode == "Trial Easy" then
-                    targetWave = State.TargetWaveTrialEasy
-                elseif State.SelectedGamemode == "Infinite Castle" then
-                    targetWave = State.TargetWaveInfiniteCastle
-                elseif State.SelectedGamemode == "Namek Invasion" then
-                    targetWave = State.TargetWaveNamekInvasion
-                end
-
-                if currentWave >= targetWave then
-                    SignalRemote:FireServer("General", "Gamemodes", "Leave")
-                    if State.UseSavedPosition and State.SavedCFrame then
-                        task.wait(1)
+                    if currentMob and IsMobSpawnedAndAlive(currentMob) then
                         local char = LocalPlayer.Character
                         local rootPart = char and char:FindFirstChild("HumanoidRootPart")
-                        if rootPart then rootPart.CFrame = State.SavedCFrame end
+                        local mobRoot = GetMobRootPart(currentMob)
+
+                        if rootPart and mobRoot then
+                            rootPart.AssemblyLinearVelocity = Vector3.zero
+                            rootPart.AssemblyAngularVelocity = Vector3.zero
+                            rootPart.CFrame = CFrame.new(mobRoot.Position + Vector3.new(0, 1.5, 2))
+                        end
+
+                        if currentMob == LastTargetMob then
+                            TargetTimeCounter = TargetTimeCounter + 0.05
+                            if TargetTimeCounter >= 1.0 then 
+                                CurrentTargetIndex = CurrentTargetIndex + 1
+                                TargetTimeCounter = 0
+                            end
+                        else
+                            LastTargetMob = currentMob
+                            TargetTimeCounter = 0
+                        end
+                    else
+                        CurrentTargetIndex = CurrentTargetIndex + 1
+                        TargetTimeCounter = 0
                     end
+                else
+                    CurrentTargetIndex = 1
+                    LastTargetMob = nil
+                    TargetTimeCounter = 0
                 end
             end)
         end
     end
 end)
 
--- ====================================================================
---                  [ABA 5: CONFIGURAÇÕES & ADICIONAIS]
--- ====================================================================
+-- ATAQUE & ACTIONS TURBO
+task.spawn(function()
+    while true do
+        task.wait(0.01)
+        if State.AutoAttackTurbo and SignalRemote then
+            pcall(function() SignalRemote:FireServer("General", "Attack", "Click", {}) end)
+        end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        if State.AutoUpgradeStat and State.SelectedStat and SignalRemote then
+            pcall(function() SignalRemote:FireServer("General", "LevelUpgrades", "Upgrade", State.SelectedStat, 1) end)
+        end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(0.01)
+        if State.AutoOpenStar and State.SelectedStar and SignalRemote then
+            pcall(function() SignalRemote:FireServer("General", "Stars", "Multi", GetCleanFolder(State.SelectedStar)) end)
+        end
+        if State.AutoOpenGacha and State.SelectedGacha and SignalRemote then
+            pcall(function() 
+                local cleanGacha = GetCleanFolder(State.SelectedGacha):gsub("%s*Gacha", "")
+                SignalRemote:FireServer("General", "Gacha", "Roll", cleanGacha, {})
+            end)
+        end
+    end
+end)
+
+-- CONFIGURAÇÕES DE INTERFACE DO FLUENT
 SaveManager:SetLibrary(Fluent)
 InterfaceManager:SetLibrary(Fluent)
-
-SaveManager:IgnoreThemeSettings()
-SaveManager:SetIgnoreIndexes({})
-
-InterfaceManager:SetFolder("TheCrownIncScript")
-SaveManager:SetFolder("TheCrownIncScript/configs")
-
 InterfaceManager:BuildInterfaceSection(Tabs.Settings)
 SaveManager:BuildConfigSection(Tabs.Settings)
 
 Window:SelectTab(1)
 
-Fluent:Notify({
-    Title    = "The Crown Inc",
-    Content  = "Script carregado com sucesso!",
-    Duration = 5
-})
+task.defer(function()
+    task.wait(1)
+    RefreshEnemyList()
+end)
 
-SaveManager:LoadAutoloadConfig()
+Fluent:Notify({ Title = "The Crown Inc", Content = "Script carregado sem erros!", Duration = 5 })
+-- ====================================================================
+--            7. LOOPS DE EXECUÇÃO - PARTE 2 (SISTEMAS E GAMEMODES)
+-- ====================================================================
+
+-- --------------------------------------------------------------------
+-- AUTO RANK UP & TIME REWARDS & CRAFT
+-- --------------------------------------------------------------------
+
+-- Loop do Auto Rank Up
+task.spawn(function()
+    while true do
+        task.wait(1)
+        if State.AutoRankUp and SignalRemote then
+            pcall(function()
+                SignalRemote:FireServer("General", "Ranks", "RankUp", {})
+            end)
+        end
+    end
+end)
+
+-- Loop do Auto Claim Time Rewards (Recompensas por Tempo)
+task.spawn(function()
+    while true do
+        task.wait(5)
+        if State.AutoClaimTimeRewards and SignalRemote then
+            pcall(function()
+                for i = 1, 12 do
+                    SignalRemote:FireServer("General", "TimeGifts", "Claim", i)
+                    task.wait(0.1)
+                end
+            end)
+        end
+    end
+end)
+
+-- Loop do Auto Craft (Fundir Personagens)
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        if State.AutoCraft and State.SelectedCraftIsland and SignalRemote then
+            pcall(function()
+                local cleanIsland = GetCleanFolder(State.SelectedCraftIsland)
+                SignalRemote:FireServer("General", "Craft", "CraftAll", cleanIsland, State.CraftShinyVersion)
+            end)
+        end
+    end
+end)
+
+-- --------------------------------------------------------------------
+-- SISTEMA DE GAMEMODES (Trial Easy, Infinite Castle, Namek Invasion)
+-- --------------------------------------------------------------------
+
+-- Auto Join Gamemode
+task.spawn(function()
+    while true do
+        task.wait(2)
+        if State.AutoJoinGamemode and State.SelectedGamemode and SignalRemote then
+            pcall(function()
+                -- Verifica se o jogador já não está dentro de um modo de jogo ativo
+                local currentGamemodeFolder = EnemiesFolder and EnemiesFolder:FindFirstChild("Gamemode")
+                local isInGamemode = currentGamemodeFolder and #currentGamemodeFolder:GetChildren() > 0
+
+                if not isInGamemode then
+                    SignalRemote:FireServer("General", "Gamemodes", "Join", State.SelectedGamemode)
+                end
+            end)
+        end
+    end
+end)
+
+-- Auto Farm Gamemode Mobs (Encontra e elimina mobs em modos de jogo)
+task.spawn(function()
+    while true do
+        task.wait(0.05)
+        if State.AutoFarmGamemode then
+            pcall(function()
+                local gamemodeEnemiesFolder = EnemiesFolder and EnemiesFolder:FindFirstChild("Gamemode")
+                if gamemodeEnemiesFolder then
+                    local activeGamemodeName = GamemodeMobFolders[State.SelectedGamemode] or State.SelectedGamemode
+                    local targetFolder = gamemodeEnemiesFolder:FindFirstChild(activeGamemodeName) or gamemodeEnemiesFolder
+
+                    local validMobs = {}
+                    for _, mob in ipairs(targetFolder:GetChildren()) do
+                        if IsMobSpawnedAndAlive(mob) then
+                            table.insert(validMobs, mob)
+                        end
+                    end
+
+                    if #validMobs > 0 then
+                        local currentMob = validMobs[1]
+                        local char = LocalPlayer.Character
+                        local rootPart = char and char:FindFirstChild("HumanoidRootPart")
+                        local mobRoot = GetMobRootPart(currentMob)
+
+                        if rootPart and mobRoot then
+                            rootPart.AssemblyLinearVelocity = Vector3.zero
+                            rootPart.AssemblyAngularVelocity = Vector3.zero
+                            rootPart.CFrame = CFrame.new(mobRoot.Position + Vector3.new(0, 1.5, 2))
+                        end
+                    end
+                end
+            end)
+        end
+    end
+end)
+
+-- Auto Leave Gamemode por Wave Limite
+task.spawn(function()
+    while true do
+        task.wait(1)
+        if State.AutoLeaveWave and SignalRemote then
+            pcall(function()
+                local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+                if not playerGui then return end
+
+                -- Tenta ler a wave atual a partir do HUD/UI do Gamemode
+                local currentWave = 0
+                local waveGui = playerGui:FindFirstChild("GamemodeHUD") or playerGui:FindFirstChild("WaveHUD")
+                
+                if waveGui then
+                    local waveTextLabel = waveGui:FindFirstChild("WaveText", true) or waveGui:FindFirstChild("Wave", true)
+                    if waveTextLabel and waveTextLabel:IsA("TextLabel") then
+                        currentWave = tonumber(waveTextLabel.Text:match("%d+")) or 0
+                    end
+                end
+
+                -- Define o limite baseado no Gamemode Selecionado
+                local targetLimit = 999
+                if State.SelectedGamemode == "Trial Easy" then
+                    targetLimit = State.TargetWaveTrialEasy
+                elseif State.SelectedGamemode == "Infinite Castle" then
+                    targetLimit = State.TargetWaveInfiniteCastle
+                elseif State.SelectedGamemode == "Namek Invasion" then
+                    targetLimit = State.TargetWaveNamekInvasion
+                end
+
+                -- Se atingir a wave configurada, envia o sinal de saída
+                if currentWave >= targetLimit and currentWave > 0 then
+                    SignalRemote:FireServer("General", "Gamemodes", "Leave", {})
+                    
+                    -- Se a opção de retornar à posição salvação estiver ativa
+                    if State.UseSavedPosition and State.SavedCFrame then
+                        task.wait(1.5)
+                        local char = LocalPlayer.Character
+                        local rootPart = char and char:FindFirstChild("HumanoidRootPart")
+                        if rootPart then
+                            rootPart.CFrame = State.SavedCFrame
+                        end
+                    end
+                end
+            end)
+        end
+    end
+end)
+
+-- Notificação de finalização
+Fluent:Notify({ 
+    Title = "The Crown Inc", 
+    Content = "Parte 2 carregada com sucesso!", 
+    Duration = 4 
+})
